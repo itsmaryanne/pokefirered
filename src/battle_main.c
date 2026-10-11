@@ -2028,7 +2028,6 @@ static void SpriteCB_BlinkVisible(struct Sprite *sprite)
 {
     if (--sprite->data[3] == 0)
     {
-        sprite->invisible ^= 1;
         sprite->data[3] = 8;
     }
 }

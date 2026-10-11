@@ -171,6 +171,122 @@ static void (*const sPlayerBufferCommands[CONTROLLER_CMDS_COUNT])(void) =
 static const u8 sTargetIdentities[] = { B_POSITION_PLAYER_LEFT, B_POSITION_PLAYER_RIGHT, B_POSITION_OPPONENT_RIGHT, B_POSITION_OPPONENT_LEFT };
 static u8 sLastTarget[MAX_BATTLERS_COUNT];
 
+#define TAG_TARGET_MARKER 55200
+#define MARKER_Y_PLAYER 22
+#define MARKER_Y_OPPONENT 8
+
+#define MARKER_TILE(c) \
+    0x00, (c) * 0x11, (c) * 0x11, 0x00, \
+    (c) << 4, (c) * 0x11, (c) * 0x11, (c), \
+    (c) * 0x11, (c) * 0x11, (c) * 0x11, (c) * 0x11, \
+    (c) * 0x11, (c) * 0x11, (c) * 0x11, (c) * 0x11, \
+    (c) * 0x11, (c) * 0x11, (c) * 0x11, (c) * 0x11, \
+    (c) * 0x11, (c) * 0x11, (c) * 0x11, (c) * 0x11, \
+    (c) << 4, (c) * 0x11, (c) * 0x11, (c), \
+    0x00, (c) * 0x11, (c) * 0x11, 0x00
+
+static const u8 sTargetMarkerTiles[] = {
+    MARKER_TILE(1),
+    MARKER_TILE(2),
+    MARKER_TILE(3),
+    MARKER_TILE(4),
+};
+
+// 1 = preto, 2 = cinza, 3 = amarelo, 4 = magenta
+static const u16 sTargetMarkerPal[16] = {
+    0x0000, 0x0421, 0x4210, 0x039F, 0x7C1F,
+};
+
+static const struct SpriteSheet sTargetMarkerSheet = { sTargetMarkerTiles, sizeof(sTargetMarkerTiles), TAG_TARGET_MARKER };
+static const struct SpritePalette sTargetMarkerPalette = { sTargetMarkerPal, TAG_TARGET_MARKER };
+
+static const union AnimCmd sTargetMarkerAnim0[] = { ANIMCMD_FRAME(0, 1), ANIMCMD_END };
+static const union AnimCmd sTargetMarkerAnim1[] = { ANIMCMD_FRAME(1, 1), ANIMCMD_END };
+static const union AnimCmd sTargetMarkerAnim2[] = { ANIMCMD_FRAME(2, 1), ANIMCMD_END };
+static const union AnimCmd sTargetMarkerAnim3[] = { ANIMCMD_FRAME(3, 1), ANIMCMD_END };
+static const union AnimCmd *const sTargetMarkerAnims[] = {
+    sTargetMarkerAnim0, sTargetMarkerAnim1, sTargetMarkerAnim2, sTargetMarkerAnim3,
+};
+
+static const struct SpriteTemplate sTargetMarkerTemplate =
+{
+    .tileTag = TAG_TARGET_MARKER,
+    .paletteTag = TAG_TARGET_MARKER,
+    .oam = &gOamData_AffineOff_ObjNormal_8x8,
+    .anims = sTargetMarkerAnims,
+    .images = NULL,
+    .affineAnims = gDummySpriteAffineAnimTable,
+    .callback = SpriteCallbackDummy,
+};
+
+static u8 sTargetMarkerIds[MAX_BATTLERS_COUNT];
+
+static bool8 TargetMarkerExists(u8 battler)
+{
+    u8 id = sTargetMarkerIds[battler];
+
+    return id != 0xFF && gSprites[id].inUse && gSprites[id].template == &sTargetMarkerTemplate;
+}
+
+static bool8 IsValidMarkerTarget(u8 battler)
+{
+    if (gAbsentBattlerFlags & gBitTable[battler])
+        return FALSE;
+    if (GetBattlerSide(battler) == B_SIDE_OPPONENT)
+        return TRUE;
+    if (battler != gActiveBattler)
+        return TRUE;
+    return (gBattleMoves[GetMonData(&gPlayerParty[gBattlerPartyIndexes[gActiveBattler]], MON_DATA_MOVE1 + gMoveSelectionCursor[gActiveBattler])].target & MOVE_TARGET_USER_OR_SELECTED) != 0;
+}
+
+static void TargetMarkers_Destroy(void)
+{
+    u8 i;
+
+    for (i = 0; i < MAX_BATTLERS_COUNT; i++)
+    {
+        if (TargetMarkerExists(i))
+            DestroySprite(&gSprites[sTargetMarkerIds[i]]);
+        sTargetMarkerIds[i] = 0xFF;
+    }
+}
+
+static void TargetMarkers_Refresh(void)
+{
+    u8 i;
+
+    if (GetSpriteTileStartByTag(TAG_TARGET_MARKER) == 0xFFFF)
+        LoadSpriteSheet(&sTargetMarkerSheet);
+    if (IndexOfSpritePaletteTag(TAG_TARGET_MARKER) == 0xFF)
+        LoadSpritePalette(&sTargetMarkerPalette);
+
+    for (i = 0; i < gBattlersCount; i++)
+    {
+        u8 want = (i == gMultiUsePlayerCursor) ? 0 : 1;
+
+        if (!IsValidMarkerTarget(i))
+        {
+            if (TargetMarkerExists(i))
+                DestroySprite(&gSprites[sTargetMarkerIds[i]]);
+            sTargetMarkerIds[i] = 0xFF;
+            continue;
+        }
+        if (!TargetMarkerExists(i))
+        {
+            u8 id = CreateSprite(&sTargetMarkerTemplate,
+                                 GetBattlerSpriteCoord(i, BATTLER_COORD_X),
+                                 GetBattlerSpriteCoord(i, BATTLER_COORD_Y) - (GetBattlerSide(i) == B_SIDE_OPPONENT ? MARKER_Y_OPPONENT : MARKER_Y_PLAYER), 0);
+
+            if (id >= MAX_SPRITES)
+                continue;
+            sTargetMarkerIds[i] = id;
+            gSprites[id].oam.priority = 1;
+        }
+        if (gSprites[sTargetMarkerIds[i]].animNum != want)
+            StartSpriteAnim(&gSprites[sTargetMarkerIds[i]], want);
+    }
+}
+
 // unknown unused data
 static const u8 sUnused[] = { 0x48, 0x48, 0x20, 0x5a, 0x50, 0x50, 0x50, 0x58 };
 
@@ -324,14 +440,16 @@ static void HandleInputChooseTarget(void)
     u8 identities[4];
 
     memcpy(identities, sTargetIdentities, NELEMS(sTargetIdentities));
+    TargetMarkers_Refresh();
     DoBounceEffect(gMultiUsePlayerCursor, BOUNCE_HEALTHBOX, 15, 1);
+    DoBounceEffect(gMultiUsePlayerCursor, BOUNCE_MON, 7, 1);
     i = 0;
     if (gBattlersCount != 0)
     {
         do
         {
             if (i != gMultiUsePlayerCursor)
-                EndBounceEffect(i, BOUNCE_HEALTHBOX);
+                { EndBounceEffect(i, BOUNCE_HEALTHBOX); EndBounceEffect(i, BOUNCE_MON); }
             ++i;
         }
         while (i < gBattlersCount);
@@ -343,6 +461,8 @@ static void HandleInputChooseTarget(void)
         sLastTarget[gActiveBattler] = gMultiUsePlayerCursor;
         BtlController_EmitTwoReturnValues(1, 10, gMoveSelectionCursor[gActiveBattler] | (gMultiUsePlayerCursor << 8));
         EndBounceEffect(gMultiUsePlayerCursor, BOUNCE_HEALTHBOX);
+        EndBounceEffect(gMultiUsePlayerCursor, BOUNCE_MON);
+        TargetMarkers_Destroy();
         PlayerBufferExecCompleted();
     }
     else if (JOY_NEW(B_BUTTON))
@@ -351,9 +471,11 @@ static void HandleInputChooseTarget(void)
         gSprites[gBattlerSpriteIds[gMultiUsePlayerCursor]].callback = SpriteCB_HideAsMoveTarget;
         sLastTarget[gActiveBattler] = gMultiUsePlayerCursor;
         gBattlerControllerFuncs[gActiveBattler] = HandleInputChooseMove;
+        TargetMarkers_Destroy();
         DoBounceEffect(gActiveBattler, BOUNCE_HEALTHBOX, 7, 1);
         DoBounceEffect(gActiveBattler, BOUNCE_MON, 7, 1);
         EndBounceEffect(gMultiUsePlayerCursor, BOUNCE_HEALTHBOX);
+        EndBounceEffect(gMultiUsePlayerCursor, BOUNCE_MON);
     }
     else if (JOY_NEW(DPAD_LEFT | DPAD_UP))
     {
