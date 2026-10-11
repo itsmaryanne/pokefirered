@@ -33,6 +33,7 @@
 #include "constants/songs.h"
 #include "constants/pokemon.h"
 #include "constants/trainers.h"
+#include "wild_encounter.h"
 
 enum {
     TRANSITION_TYPE_NORMAL,
@@ -267,10 +268,11 @@ static void DoStandardWildBattle(void)
     if (HasTwoUsableMons())
     {
         gBattleTypeFlags = BATTLE_TYPE_DOUBLE;
-        CreateMon(&gEnemyParty[1],
-                  GetMonData(&gEnemyParty[0], MON_DATA_SPECIES),
-                  GetMonData(&gEnemyParty[0], MON_DATA_LEVEL),
-                  USE_RANDOM_IVS, FALSE, 0, FALSE, 0);
+            if (HasTwoUsableMons())
+    {
+        gBattleTypeFlags = BATTLE_TYPE_DOUBLE;
+        GenerateSecondWildMon();
+    }
     }
     CreateBattleStartTask(GetWildBattleTransition(), 0);
     IncrementGameStat(GAME_STAT_TOTAL_BATTLES);

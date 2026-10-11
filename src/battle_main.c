@@ -4254,20 +4254,22 @@ bool8 TryRunFromBattle(u8 battler)
         if (GetBattlerSide(battler) == B_SIDE_PLAYER)
             effect++;
     }
-    else
+        else
     {
-        if (!(gBattleTypeFlags & BATTLE_TYPE_DOUBLE))
+        u8 opponent = BATTLE_OPPOSITE(battler);
+
+        if (gBattleMons[opponent].hp == 0)
+            opponent = BATTLE_PARTNER(opponent);
+
+        if (gBattleMons[battler].speed < gBattleMons[opponent].speed)
         {
-            if (gBattleMons[battler].speed < gBattleMons[BATTLE_OPPOSITE(battler)].speed)
-            {
-                speedVar = (gBattleMons[battler].speed * 128) / (gBattleMons[BATTLE_OPPOSITE(battler)].speed) + (gBattleStruct->runTries * 30);
-                if (speedVar > (Random() & 0xFF))
-                    effect++;
-            }
-            else // same speed or faster
-            {
+            speedVar = (gBattleMons[battler].speed * 128) / (gBattleMons[opponent].speed) + (gBattleStruct->runTries * 30);
+            if (speedVar > (Random() & 0xFF))
                 effect++;
-            }
+        }
+        else // same speed or faster
+        {
+            effect++;
         }
 
         ++gBattleStruct->runTries;
