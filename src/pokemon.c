@@ -6451,3 +6451,15 @@ u8 *MonSpritesGfxManager_GetSpritePtr(u8 spriteNum)
         return sMonSpritesGfxManager->spritePointers[spriteNum];
     }
 }
+
+u8 GetLevelCap(void)
+{
+    static const u8 caps[] = {14, 21, 24, 29, 43, 43, 47, 50, MAX_LEVEL};
+    u8 i, badges = 0;
+
+    for (i = 0; i < 8; i++)
+        if (FlagGet(FLAG_BADGE01_GET + i))
+            badges++;
+
+    return caps[badges];
+}

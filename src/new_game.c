@@ -1,7 +1,12 @@
+#include "constants/items.h"
 #include "global.h"
+#include "constants/items.h"
 #include "gflib.h"
+#include "constants/items.h"
 #include "random.h"
+#include "constants/items.h"
 #include "overworld.h"
+#include "constants/items.h"
 #include "constants/maps.h"
 #include "load_save.h"
 #include "item_menu.h"
@@ -29,6 +34,9 @@
 #include "berry_powder.h"
 #include "pokemon_jump.h"
 #include "event_scripts.h"
+#include "item.h"
+#include "bag.h"
+
 
 // this file's functions
 static void ResetMiniGamesResults(void);
@@ -137,6 +145,7 @@ void NewGameInitData(void)
     ClearRoamerData();
     gSaveBlock1Ptr->registeredItem = 0;
     ClearBag();
+    AddBagItem(ITEM_RARE_CANDY, 99);
     NewGameInitPCItems();
     ClearEnigmaBerries();
     InitEasyChatPhrases();
