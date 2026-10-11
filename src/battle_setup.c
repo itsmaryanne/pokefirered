@@ -61,6 +61,19 @@ struct TrainerBattleParameter
 static void DoSafariBattle(void);
 static void DoGhostBattle(void);
 static void DoStandardWildBattle(void);
+static bool8 HasTwoUsableMons(void)
+{
+    u8 i, count = 0;
+
+    for (i = 0; i < PARTY_SIZE; i++)
+    {
+        if (GetMonData(&gPlayerParty[i], MON_DATA_SPECIES) != SPECIES_NONE
+         && !GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG)
+         && GetMonData(&gPlayerParty[i], MON_DATA_HP) != 0)
+            count++;
+    }
+    return count >= 2;
+}
 static void CB2_EndWildBattle(void);
 static u8 GetWildBattleTransition(void);
 static u8 GetTrainerBattleTransition(void);
@@ -250,7 +263,15 @@ static void DoStandardWildBattle(void)
     FreezeObjectEvents();
     StopPlayerAvatar();
     gMain.savedCallback = CB2_EndWildBattle;
-    gBattleTypeFlags = 0;
+        gBattleTypeFlags = 0;
+    if (HasTwoUsableMons())
+    {
+        gBattleTypeFlags = BATTLE_TYPE_DOUBLE;
+        CreateMon(&gEnemyParty[1],
+                  GetMonData(&gEnemyParty[0], MON_DATA_SPECIES),
+                  GetMonData(&gEnemyParty[0], MON_DATA_LEVEL),
+                  USE_RANDOM_IVS, FALSE, 0, FALSE, 0);
+    }
     CreateBattleStartTask(GetWildBattleTransition(), 0);
     IncrementGameStat(GAME_STAT_TOTAL_BATTLES);
     IncrementGameStat(GAME_STAT_WILD_BATTLES);
