@@ -93,8 +93,14 @@ BattleScript_CaughtPokemonSkipNewDex::
 BattleScript_CaughtPokemonSkipNickname::
 	givecaughtmon
 BattleScript_CaughtPokemonDone::
-	setbyte gBattleOutcome, B_OUTCOME_CAUGHT
-	finishturn
+        jumpifbyte CMP_NOT_EQUAL, gCatchOtherAlive, 0, BattleScript_CaughtPokemonContinue
+        setbyte gBattleOutcome, B_OUTCOME_CAUGHT
+        finishturn
+
+BattleScript_CaughtPokemonContinue::
+        dofaintanimation BS_TARGET
+        cleareffectsonfaint BS_TARGET
+        finishaction
 
 BattleScript_OldMan_Pokedude_CaughtMessage::
 	printstring STRINGID_GOTCHAPKMNCAUGHT2

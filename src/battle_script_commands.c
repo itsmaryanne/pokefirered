@@ -6116,6 +6116,8 @@ static void Cmd_various(void)
         }
         break;
     case VARIOUS_RESET_PLAYER_FAINTED:
+        if (!(gBattleTypeFlags & BATTLE_TYPE_TRAINER))
+            gHitMarker &= ~HITMARKER_PLAYER_FAINTED;
         if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_DOUBLE))
             && gBattleTypeFlags & BATTLE_TYPE_TRAINER
             && gBattleMons[0].hp != 0
@@ -9577,6 +9579,7 @@ static void Cmd_handleballthrow(void)
             BtlController_EmitBallThrowAnim(BUFFER_A, BALL_3_SHAKES_SUCCESS);
             MarkBattlerForControllerExec(gActiveBattler);
             gBattlescriptCurrInstr = BattleScript_SuccessBallThrow;
+            gCaptureNameBattler = gBattlerTarget + 1;
             SetMonData(&gEnemyParty[gBattlerPartyIndexes[gBattlerTarget]], MON_DATA_POKEBALL, &gLastUsedItem);
 
             if (CalculatePlayerPartyCount() == PARTY_SIZE)
@@ -9602,6 +9605,7 @@ static void Cmd_handleballthrow(void)
             if (shakes == BALL_3_SHAKES_SUCCESS) // mon caught, copy of the code above
             {
                 gBattlescriptCurrInstr = BattleScript_SuccessBallThrow;
+                gCaptureNameBattler = gBattlerTarget + 1;
                 SetMonData(&gEnemyParty[gBattlerPartyIndexes[gBattlerTarget]], MON_DATA_POKEBALL, &gLastUsedItem);
 
                 if (CalculatePlayerPartyCount() == PARTY_SIZE)
@@ -9618,6 +9622,9 @@ static void Cmd_handleballthrow(void)
     }
 }
 
+
+EWRAM_DATA u8 gCatchOtherAlive = 0;
+EWRAM_DATA u8 gCaptureNameBattler = 0;
 static void Cmd_givecaughtmon(void)
 {
     if (GiveMonToPlayer(&gEnemyParty[gBattlerPartyIndexes[gBattlerTarget]]) != MON_GIVEN_TO_PARTY)
@@ -9643,6 +9650,25 @@ static void Cmd_givecaughtmon(void)
 
     gBattleResults.caughtMonSpecies = gBattleMons[gBattlerTarget].species;
     GetMonData(&gEnemyParty[gBattlerPartyIndexes[gBattlerTarget]], MON_DATA_NICKNAME, gBattleResults.caughtMonNick);
+
+
+
+        gCatchOtherAlive = FALSE;
+        gCaptureNameBattler = 0;
+    if (gBattleTypeFlags & BATTLE_TYPE_DOUBLE)
+    {
+        u8 partner = BATTLE_PARTNER(gBattlerTarget);
+
+        if (!(gAbsentBattlerFlags & gBitTable[partner]) && gBattleMons[partner].hp != 0)
+        {
+            u16 zeroHp = 0;
+
+            gCatchOtherAlive = TRUE;
+            gBattleMons[gBattlerTarget].hp = 0;
+            SetMonData(&gEnemyParty[gBattlerPartyIndexes[gBattlerTarget]], MON_DATA_HP, &zeroHp);
+            gAbsentBattlerFlags |= gBitTable[gBattlerTarget];
+        }
+    }
 
     gBattlescriptCurrInstr++;
 }

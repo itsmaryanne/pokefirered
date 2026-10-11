@@ -282,6 +282,7 @@ struct AI_ThinkingStruct
 
 extern u8 gActiveBattler;
 extern u8 gBattlerTarget;
+extern u8 gCaptureNameBattler;
 extern u8 gAbsentBattlerFlags;
 
 extern struct BattlePokemon gBattleMons[MAX_BATTLERS_COUNT];

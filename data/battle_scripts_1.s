@@ -2885,6 +2885,7 @@ BattleScript_FaintedMonSendOutNew::
 	jumpifbattletype BATTLE_TYPE_DOUBLE, BattleScript_FaintedMonEnd
 	cancelallactions
 BattleScript_FaintedMonEnd::
+	resetplayerfainted
 	end2
 
 BattleScript_LinkHandleFaintedMonMultiple::
