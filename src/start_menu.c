@@ -49,6 +49,7 @@ enum StartMenuOption
     STARTMENU_EXIT,
     STARTMENU_RETIRE,
     STARTMENU_PLAYER2,
+    STARTMENU_COOP,
     MAX_STARTMENU_ITEMS
 };
 
@@ -113,6 +114,10 @@ static void PrintSaveStats(void);
 static void CloseSaveStatsWindow(void);
 static void CloseStartMenu(void);
 
+static const u8 sText_MenuCoop[] = _("COOP");
+static bool8 StartMenuCoopCallback(void);
+extern void Coop_StartMenuAction(void);
+
 static const struct MenuAction sStartMenuActionTable[] = {
     [STARTMENU_POKEDEX] = { gText_MenuPokedex, {.u8_void = StartMenuPokedexCallback} },
     [STARTMENU_POKEMON] = { gText_MenuPokemon, {.u8_void = StartMenuPokemonCallback} },
@@ -122,7 +127,8 @@ static const struct MenuAction sStartMenuActionTable[] = {
     [STARTMENU_OPTION]  = { gText_MenuOption,  {.u8_void = StartMenuOptionCallback} },
     [STARTMENU_EXIT]    = { gText_MenuExit,    {.u8_void = StartMenuExitCallback} },
     [STARTMENU_RETIRE]  = { gText_MenuRetire,  {.u8_void = StartMenuSafariZoneRetireCallback} },
-    [STARTMENU_PLAYER2] = { gText_MenuPlayer,  {.u8_void = StartMenuLinkPlayerCallback} }
+    [STARTMENU_PLAYER2] = { gText_MenuPlayer,  {.u8_void = StartMenuLinkPlayerCallback} },
+    [STARTMENU_COOP]    = { sText_MenuCoop,    {.u8_void = StartMenuCoopCallback} }
 };
 
 static const struct WindowTemplate sSafariZoneStatsWindowTemplate = {
@@ -217,7 +223,7 @@ static void SetUpStartMenu_NormalField(void)
     if (FlagGet(FLAG_SYS_POKEMON_GET) == TRUE)
         AppendToStartMenuItems(STARTMENU_POKEMON);
     AppendToStartMenuItems(STARTMENU_BAG);
-    AppendToStartMenuItems(STARTMENU_PLAYER);
+    AppendToStartMenuItems(STARTMENU_COOP);
     AppendToStartMenuItems(STARTMENU_SAVE);
     AppendToStartMenuItems(STARTMENU_OPTION);
     AppendToStartMenuItems(STARTMENU_EXIT);
@@ -446,7 +452,8 @@ static bool8 StartCB_HandleInput(void)
 
 static void StartMenu_FadeScreenIfLeavingOverworld(void)
 {
-    if (sStartMenuCallback != StartMenuSaveCallback
+    if (sStartMenuCallback != StartMenuCoopCallback
+         && sStartMenuCallback != StartMenuSaveCallback
      && sStartMenuCallback != StartMenuExitCallback
      && sStartMenuCallback != StartMenuSafariZoneRetireCallback)
     {
@@ -1013,4 +1020,13 @@ void AppendToList(u8 *list, u8 *cursor, u8 newEntry)
 {
     list[*cursor] = newEntry;
     (*cursor)++;
+}
+
+static bool8 StartMenuCoopCallback(void)
+{
+    DestroySafariZoneStatsWindow();
+    DestroyHelpMessageWindow_();
+    CloseStartMenu();
+    Coop_StartMenuAction();
+    return TRUE;
 }

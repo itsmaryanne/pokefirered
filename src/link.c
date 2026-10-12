@@ -2200,3 +2200,44 @@ void ResetRecvBuffer(void)
         }
     }
 }
+
+static u8 sCoopMaxState;
+static u8 sCoopMaxPlayers;
+static u8 sCoopEverMaster;
+static u16 sCoopLastStatus;
+
+void Coop_LinkTrackReset(void)
+{
+    sCoopMaxState = 0;
+    sCoopMaxPlayers = 0;
+    sCoopEverMaster = 0;
+    sCoopLastStatus = 0;
+}
+
+void Coop_LinkTrack(void)
+{
+    if (gLink.state > sCoopMaxState)
+        sCoopMaxState = gLink.state;
+    if (gLink.playerCount > sCoopMaxPlayers)
+        sCoopMaxPlayers = gLink.playerCount;
+    if (gLink.isMaster == LINK_MASTER)
+        sCoopEverMaster = 1;
+    sCoopLastStatus = gLinkStatus;
+}
+
+u16 Coop_LinkDebugWord(u8 which)
+{
+    switch (which)
+    {
+    case 0: return gLink.state;
+    case 1: return gLink.playerCount;
+    case 2: return gLink.localId;
+    case 3: return gLink.isMaster;
+    case 4: return gShouldAdvanceLinkState;
+    case 5: return sCoopMaxState;
+    case 6: return sCoopMaxPlayers;
+    case 7: return sCoopEverMaster;
+    case 8: return sCoopLastStatus;
+    }
+    return 0;
+}

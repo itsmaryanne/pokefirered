@@ -1,4 +1,6 @@
 #include "global.h"
+#include "strings.h"
+#include "string_util.h"
 #include "gflib.h"
 #include "bg_regs.h"
 #include "cable_club.h"
@@ -3563,44 +3565,119 @@ static void SpriteCB_LinkPlayer(struct Sprite *sprite)
     }
 }
 
+// ---- COOP DEBUG: conexão pelo menu Start, mensagens por script ----
+extern const u8 EventScript_CoopMessage[];
+extern u16 Coop_LinkDebugWord(u8 which);
+extern void Coop_LinkTrackReset(void);
+extern void Coop_LinkTrack(void);
 
-// ---- COOP DEBUG: atalho L + R + Select abre ou fecha o link no mundo aberto ----
-static u8 sCoopLinkState;   // 0 = fechado, 1 = abrindo, 2 = conectado
+static u8 sCoopStep;        // 0 = teste de mensagem, 1 = pronto para conectar
+static u8 sCoopLinkState;   // 0 = fechado, 1 = conectando, 2 = conectado
 static u16 sCoopLinkTimer;
 
-static void CoopDebug_Update(u16 newKeys, u16 heldKeys)
-{
-    bool8 combo = ((heldKeys & (L_BUTTON | R_BUTTON)) == (L_BUTTON | R_BUTTON)) && (newKeys & SELECT_BUTTON);
+static const u8 sText_CoopMsgOk[] = _("MENSAGEM OK!\nAPERTE COOP DE NOVO.");
+static const u8 sText_CoopConnecting[] = _("CONECTANDO...\nESPERE O OUTRO LADO.");
+static const u8 sText_CoopConnected[] = _("CONECTADO!");
+static const u8 sText_CoopClosed[] = _("DESCONECTADO.");
+static const u8 sText_CoopHeadFail[] = _("SEM CONEXAO.");
+static const u8 sText_CoopHeadLive[] = _("CONECTANDO...");
+static const u8 sText_CoopNl[] = _("\n");
+static const u8 sText_CoopPage[] = _("\p");
+static const u8 sText_CoopLblN[] = _("N=");
+static const u8 sText_CoopLblR[] = _(" R=");
+static const u8 sText_CoopLblS[] = _(" S=");
+static const u8 sText_CoopLblSt[] = _("ST=");
+static const u8 sText_CoopLblP[] = _(" P=");
+static const u8 sText_CoopLblId[] = _(" ID=");
+static const u8 sText_CoopLblM[] = _(" M=");
+static const u8 sText_CoopLblA[] = _(" A=");
+static const u8 sText_CoopLblMax[] = _("MAX ST=");
+static const u8 sText_CoopLblLast[] = _("ULT S=");
 
+static u8 *CoopDec(u8 *p, const u8 *label, u32 v, u8 n)
+{
+    p = StringCopy(p, label);
+    return ConvertIntToDecimalStringN(p, v, STR_CONV_MODE_LEFT_ALIGN, n);
+}
+
+static u8 *CoopHex(u8 *p, const u8 *label, u32 v, u8 n)
+{
+    p = StringCopy(p, label);
+    return ConvertIntToHexStringN(p, v, STR_CONV_MODE_LEADING_ZEROS, n);
+}
+
+static void CoopSay(const u8 *text)
+{
+    StringCopy(gStringVar4, text);
+    ScriptContext_SetupScript(EventScript_CoopMessage);
+}
+
+static void CoopSayStatus(const u8 *head)
+{
+    u8 *p = StringCopy(gStringVar4, head);
+
+    p = StringCopy(p, sText_CoopNl);
+    p = CoopDec(p, sText_CoopLblN, GetLinkPlayerCount_2(), 2);
+    p = CoopDec(p, sText_CoopLblR, gReceivedRemoteLinkPlayers, 1);
+    p = CoopHex(p, sText_CoopLblS, gLinkStatus, 4);
+    p = StringCopy(p, sText_CoopPage);
+    p = CoopDec(p, sText_CoopLblSt, Coop_LinkDebugWord(0), 1);
+    p = CoopDec(p, sText_CoopLblP, Coop_LinkDebugWord(1), 1);
+    p = CoopDec(p, sText_CoopLblId, Coop_LinkDebugWord(2), 1);
+    p = CoopDec(p, sText_CoopLblM, Coop_LinkDebugWord(3), 1);
+    p = CoopDec(p, sText_CoopLblA, Coop_LinkDebugWord(4), 1);
+    p = StringCopy(p, sText_CoopPage);
+    p = CoopDec(p, sText_CoopLblMax, Coop_LinkDebugWord(5), 1);
+    p = CoopDec(p, sText_CoopLblP, Coop_LinkDebugWord(6), 1);
+    p = CoopDec(p, sText_CoopLblM, Coop_LinkDebugWord(7), 1);
+    p = StringCopy(p, sText_CoopNl);
+    CoopHex(p, sText_CoopLblLast, Coop_LinkDebugWord(8), 4);
+    ScriptContext_SetupScript(EventScript_CoopMessage);
+}
+
+void Coop_StartMenuAction(void)
+{
+    if (sCoopStep == 0)
+    {
+        sCoopStep = 1;
+        CoopSay(sText_CoopMsgOk);
+        return;
+    }
     switch (sCoopLinkState)
     {
     case 0:
-        if (combo)
-        {
-            OpenLink();
-            sCoopLinkTimer = 0;
-            sCoopLinkState = 1;
-        }
+        OpenLink();
+        Coop_LinkTrackReset();
+        sCoopLinkTimer = 0;
+        sCoopLinkState = 1;
+        CoopSay(sText_CoopConnecting);
         break;
     case 1:
+        CoopSayStatus(sText_CoopHeadLive);
+        break;
+    case 2:
+        CloseLink();
+        sCoopLinkState = 0;
+        CoopSay(sText_CoopClosed);
+        break;
+    }
+}
+
+static void CoopDebug_Update(u16 newKeys, u16 heldKeys)
+{
+    if (sCoopLinkState == 1)
+    {
+        Coop_LinkTrack();
         if (gReceivedRemoteLinkPlayers == TRUE && GetLinkPlayerCount_2() >= 2)
         {
-            PlaySE(SE_SELECT);
             sCoopLinkState = 2;
+            CoopSay(sText_CoopConnected);
         }
         else if (++sCoopLinkTimer > 600)
         {
-            CloseLink();
-            PlaySE(SE_FAILURE);
-            sCoopLinkState = 0;
-        }
-        break;
-    case 2:
-        if (combo)
-        {
+            CoopSayStatus(sText_CoopHeadFail);
             CloseLink();
             sCoopLinkState = 0;
         }
-        break;
     }
 }
