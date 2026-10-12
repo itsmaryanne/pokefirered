@@ -1,4 +1,5 @@
 #include "global.h"
+#include "util.h"
 #include "gflib.h"
 #include "link.h"
 #include "data.h"
@@ -228,7 +229,7 @@ static void CreateBattlerSprite(u8 battler)
             posY = GetBattlerSpriteDefault_Y(battler);
         if (GetBattlerSide(battler) != B_SIDE_PLAYER)
         {
-            if (GetMonData(&gEnemyParty[gBattlerPartyIndexes[battler]], MON_DATA_HP) == 0)
+            if (GetMonData(&gEnemyParty[gBattlerPartyIndexes[battler]], MON_DATA_HP) == 0 || (gAbsentBattlerFlags & gBitTable[battler]))
                 return;
             SetMultiuseSpriteTemplateToPokemon(GetMonData(&gEnemyParty[gBattlerPartyIndexes[battler]], MON_DATA_SPECIES), GetBattlerPosition(battler));
             gBattlerSpriteIds[battler] = CreateSprite(&gMultiuseSpriteTemplate, GetBattlerSpriteCoord(battler, BATTLER_COORD_X_2), posY, GetBattlerSpriteSubpriority(battler));
@@ -303,7 +304,7 @@ static void CreateHealthboxSprite(u8 battler)
             DummyBattleInterfaceFunc(gHealthboxSpriteIds[battler], FALSE);
         if (GetBattlerSide(battler) != B_SIDE_PLAYER)
         {
-            if (GetMonData(&gEnemyParty[gBattlerPartyIndexes[battler]], MON_DATA_HP) == 0)
+            if (GetMonData(&gEnemyParty[gBattlerPartyIndexes[battler]], MON_DATA_HP) == 0 || (gAbsentBattlerFlags & gBitTable[battler]))
                 SetHealthboxSpriteInvisible(healthboxSpriteId);
         }
         else if (!(gBattleTypeFlags & BATTLE_TYPE_SAFARI) && GetMonData(&gPlayerParty[gBattlerPartyIndexes[battler]], MON_DATA_HP) == 0)

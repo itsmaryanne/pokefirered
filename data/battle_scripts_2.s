@@ -74,33 +74,45 @@ BattleScript_SuccessBallThrow::
 	jumpifhalfword CMP_EQUAL, gLastUsedItem, ITEM_SAFARI_BALL, BattleScript_SafariNoIncGameStat
 	incrementgamestat GAME_STAT_POKEMON_CAPTURES
 BattleScript_SafariNoIncGameStat::
-	printstring STRINGID_GOTCHAPKMNCAUGHT
-	trysetcaughtmondexflags BattleScript_CaughtPokemonSkipNewDex
-	printstring STRINGID_PKMNDATAADDEDTODEX
-	waitstate
-	setbyte gBattleCommunication, 0
-	displaydexinfo
-BattleScript_CaughtPokemonSkipNewDex::
-	printstring STRINGID_GIVENICKNAMECAPTURED
-	waitstate
-	setbyte gBattleCommunication, 0
-	trygivecaughtmonnick BattleScript_CaughtPokemonSkipNickname
-	givecaughtmon
-	printfromtable gCaughtMonStringIds
-	waitmessage B_WAIT_TIME_LONG
-	goto BattleScript_CaughtPokemonDone
-
-BattleScript_CaughtPokemonSkipNickname::
-	givecaughtmon
-BattleScript_CaughtPokemonDone::
+        printstring STRINGID_GOTCHAPKMNCAUGHT
         jumpifbyte CMP_NOT_EQUAL, gCatchOtherAlive, 0, BattleScript_CaughtPokemonContinue
+        call BattleScript_ProcessPendingCatches
+BattleScript_CaughtPokemonSkipNewDex::
+BattleScript_CaughtPokemonSkipNickname::
+BattleScript_CaughtPokemonDone::
         setbyte gBattleOutcome, B_OUTCOME_CAUGHT
         finishturn
 
 BattleScript_CaughtPokemonContinue::
+        various BS_TARGET, VARIOUS_HIDE_PENDING_CATCH
         dofaintanimation BS_TARGET
         cleareffectsonfaint BS_TARGET
         finishaction
+
+BattleScript_ProcessPendingCatches::
+        various BS_TARGET, VARIOUS_NEXT_PENDING_CATCH
+        jumpifbyte CMP_EQUAL, gCatchPendingLeft, 0, BattleScript_ProcessPendingCatchesDone
+        trysetcaughtmondexflags BattleScript_PendingSkipNewDex
+        printstring STRINGID_PKMNDATAADDEDTODEX
+        waitstate
+        setbyte gBattleCommunication, 0
+        displaydexinfo
+BattleScript_PendingSkipNewDex::
+        printstring STRINGID_GIVENICKNAMECAPTURED
+        waitstate
+        setbyte gBattleCommunication, 0
+        trygivecaughtmonnick BattleScript_PendingSkipNickname
+        givecaughtmon
+        printfromtable gCaughtMonStringIds
+        waitmessage B_WAIT_TIME_LONG
+        goto BattleScript_ProcessPendingCatches
+
+BattleScript_PendingSkipNickname::
+        givecaughtmon
+        goto BattleScript_ProcessPendingCatches
+
+BattleScript_ProcessPendingCatchesDone::
+        return
 
 BattleScript_OldMan_Pokedude_CaughtMessage::
 	printstring STRINGID_GOTCHAPKMNCAUGHT2

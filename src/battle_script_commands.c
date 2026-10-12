@@ -3382,6 +3382,16 @@ static void Cmd_getexp(void)
 // For battles that aren't BATTLE_TYPE_LINK, the only thing this
 // command does is check whether the player has won/lost by totaling each team's HP. It then
 // sets gBattleOutcome accordingly, if necessary.
+static bool8 IsEnemySlotPendingCatch(u8 partyIndex)
+{
+    u8 b;
+
+    for (b = 0; b < gBattlersCount; b++)
+        if ((gPendingCatchMask & gBitTable[b]) && gBattlerPartyIndexes[b] == partyIndex)
+            return TRUE;
+    return FALSE;
+}
+
 static void Cmd_checkteamslost(void)
 {
     u16 HP_count = 0;
@@ -3404,7 +3414,7 @@ static void Cmd_checkteamslost(void)
     // Get total HP for the enemy's party to determine if the player has won
     for (i = 0; i < PARTY_SIZE; i++)
     {
-        if (GetMonData(&gEnemyParty[i], MON_DATA_SPECIES) && !GetMonData(&gEnemyParty[i], MON_DATA_IS_EGG))
+        if (GetMonData(&gEnemyParty[i], MON_DATA_SPECIES) && !GetMonData(&gEnemyParty[i], MON_DATA_IS_EGG) && !IsEnemySlotPendingCatch(i))
         {
             HP_count += GetMonData(&gEnemyParty[i], MON_DATA_HP);
         }
@@ -6115,6 +6125,28 @@ static void Cmd_various(void)
                 *choicedMove = MOVE_NONE;
         }
         break;
+    case VARIOUS_HIDE_PENDING_CATCH:
+        gBattleMons[gBattlerTarget].hp = 0;
+        gAbsentBattlerFlags |= gBitTable[gBattlerTarget];
+        break;
+    case VARIOUS_NEXT_PENDING_CATCH:
+    {
+        u8 k;
+
+        gCatchPendingLeft = FALSE;
+        for (k = 0; k < gBattlersCount; k++)
+        {
+            if (gPendingCatchMask & gBitTable[k])
+            {
+                gPendingCatchMask &= ~gBitTable[k];
+                gBattlerTarget = k;
+                gCaptureNameBattler = k + 1;
+                gCatchPendingLeft = TRUE;
+                break;
+            }
+        }
+        break;
+    }
     case VARIOUS_RESET_PLAYER_FAINTED:
         if (!(gBattleTypeFlags & BATTLE_TYPE_TRAINER))
             gHitMarker &= ~HITMARKER_PLAYER_FAINTED;
@@ -9462,6 +9494,19 @@ static void Cmd_removelightscreenreflect(void)
     gBattlescriptCurrInstr++;
 }
 
+static void RegisterPendingCatch(void)
+{
+    u8 partner = BATTLE_PARTNER(gBattlerTarget);
+
+    gCaptureNameBattler = gBattlerTarget + 1;
+    gPendingCatchMask |= gBitTable[gBattlerTarget];
+    gCatchOtherAlive = FALSE;
+    if ((gBattleTypeFlags & BATTLE_TYPE_DOUBLE)
+     && !(gAbsentBattlerFlags & gBitTable[partner])
+     && gBattleMons[partner].hp != 0)
+        gCatchOtherAlive = TRUE;
+}
+
 static void Cmd_handleballthrow(void)
 {
     u8 ballMultiplier = 0;
@@ -9579,7 +9624,7 @@ static void Cmd_handleballthrow(void)
             BtlController_EmitBallThrowAnim(BUFFER_A, BALL_3_SHAKES_SUCCESS);
             MarkBattlerForControllerExec(gActiveBattler);
             gBattlescriptCurrInstr = BattleScript_SuccessBallThrow;
-            gCaptureNameBattler = gBattlerTarget + 1;
+            RegisterPendingCatch();
             SetMonData(&gEnemyParty[gBattlerPartyIndexes[gBattlerTarget]], MON_DATA_POKEBALL, &gLastUsedItem);
 
             if (CalculatePlayerPartyCount() == PARTY_SIZE)
@@ -9605,7 +9650,7 @@ static void Cmd_handleballthrow(void)
             if (shakes == BALL_3_SHAKES_SUCCESS) // mon caught, copy of the code above
             {
                 gBattlescriptCurrInstr = BattleScript_SuccessBallThrow;
-                gCaptureNameBattler = gBattlerTarget + 1;
+                RegisterPendingCatch();
                 SetMonData(&gEnemyParty[gBattlerPartyIndexes[gBattlerTarget]], MON_DATA_POKEBALL, &gLastUsedItem);
 
                 if (CalculatePlayerPartyCount() == PARTY_SIZE)
@@ -9625,6 +9670,8 @@ static void Cmd_handleballthrow(void)
 
 EWRAM_DATA u8 gCatchOtherAlive = 0;
 EWRAM_DATA u8 gCaptureNameBattler = 0;
+EWRAM_DATA u8 gPendingCatchMask = 0;
+EWRAM_DATA u8 gCatchPendingLeft = 0;
 static void Cmd_givecaughtmon(void)
 {
     if (GiveMonToPlayer(&gEnemyParty[gBattlerPartyIndexes[gBattlerTarget]]) != MON_GIVEN_TO_PARTY)

@@ -1632,6 +1632,18 @@ static u8 CreateNPCTrainerParty(struct Pokemon *party, u16 trainerNum)
         }
 
         gBattleTypeFlags |= gTrainers[trainerNum].doubleBattle;
+        if (gTrainers[trainerNum].partySize > 1 && !(gBattleTypeFlags & BATTLE_TYPE_DOUBLE))
+        {
+            u8 j, usable = 0;
+
+            for (j = 0; j < PARTY_SIZE; j++)
+                if (GetMonData(&gPlayerParty[j], MON_DATA_SPECIES) != SPECIES_NONE
+                 && !GetMonData(&gPlayerParty[j], MON_DATA_IS_EGG)
+                 && GetMonData(&gPlayerParty[j], MON_DATA_HP) != 0)
+                    usable++;
+            if (usable >= 2)
+                gBattleTypeFlags |= BATTLE_TYPE_DOUBLE;
+        }
     }
 
     return gTrainers[trainerNum].partySize;
@@ -2212,6 +2224,8 @@ static void BattleStartClearSetData(void)
     s32 i;
     u32 j;
     u8 *dataPtr;
+    gPendingCatchMask = 0;
+    gCatchOtherAlive = FALSE;
 
     TurnValuesCleanUp(FALSE);
     SpecialStatusesClear();
@@ -4230,6 +4244,9 @@ bool8 TryRunFromBattle(u8 battler)
     bool8 effect = FALSE;
     u8 holdEffect;
     u8 speedVar;
+
+    if (gPendingCatchMask != 0 && GetBattlerSide(battler) == B_SIDE_PLAYER)
+        return FALSE;
 
     if (gBattleMons[battler].item == ITEM_ENIGMA_BERRY)
         holdEffect = gEnigmaBerries[battler].holdEffect;

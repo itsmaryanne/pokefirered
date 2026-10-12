@@ -172,6 +172,7 @@ static void Task_OvwldCredits_FadeOut(u8 taskId);
 static void Task_OvwldCredits_WaitFade(u8 taskId);
 
 static void CB1_UpdateLinkState(void);
+static void CoopDebug_Update(u16 newKeys, u16 heldKeys);
 static void ResetAllMultiplayerState(void);
 static void ClearAllPlayerKeys(void);
 static void SetKeyInterceptCallback(KeyInterCB callback);
@@ -1453,7 +1454,7 @@ void CB1_Overworld(void)
         if (QL_GetPlaybackState() == QL_PLAYBACK_STATE_RUNNING || gQuestLogState == QL_STATE_PLAYBACK)
             DoCB1_Overworld_QuestLogPlayback();
         else
-            DoCB1_Overworld(gMain.newKeys, gMain.heldKeys);
+            { CoopDebug_Update(gMain.newKeys, gMain.heldKeys); DoCB1_Overworld(gMain.newKeys, gMain.heldKeys); }
     }
 }
 
@@ -3559,5 +3560,47 @@ static void SpriteCB_LinkPlayer(struct Sprite *sprite)
     {
         sprite->invisible = ((sprite->data[7] & 4) >> 2);
         sprite->data[7]++;
+    }
+}
+
+
+// ---- COOP DEBUG: atalho L + R + Select abre ou fecha o link no mundo aberto ----
+static u8 sCoopLinkState;   // 0 = fechado, 1 = abrindo, 2 = conectado
+static u16 sCoopLinkTimer;
+
+static void CoopDebug_Update(u16 newKeys, u16 heldKeys)
+{
+    bool8 combo = ((heldKeys & (L_BUTTON | R_BUTTON)) == (L_BUTTON | R_BUTTON)) && (newKeys & SELECT_BUTTON);
+
+    switch (sCoopLinkState)
+    {
+    case 0:
+        if (combo)
+        {
+            OpenLink();
+            sCoopLinkTimer = 0;
+            sCoopLinkState = 1;
+        }
+        break;
+    case 1:
+        if (gReceivedRemoteLinkPlayers == TRUE && GetLinkPlayerCount_2() >= 2)
+        {
+            PlaySE(SE_SELECT);
+            sCoopLinkState = 2;
+        }
+        else if (++sCoopLinkTimer > 600)
+        {
+            CloseLink();
+            PlaySE(SE_FAILURE);
+            sCoopLinkState = 0;
+        }
+        break;
+    case 2:
+        if (combo)
+        {
+            CloseLink();
+            sCoopLinkState = 0;
+        }
+        break;
     }
 }

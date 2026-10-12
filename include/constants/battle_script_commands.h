@@ -140,4 +140,7 @@
 #define MOVEEND_NEXT_TARGET                     16
 #define MOVEEND_COUNT                           17
 
+#define VARIOUS_HIDE_PENDING_CATCH 13
+#define VARIOUS_NEXT_PENDING_CATCH 14
+
 #endif // GUARD_CONSTANTS_BATTLE_SCRIPT_COMMANDS_H

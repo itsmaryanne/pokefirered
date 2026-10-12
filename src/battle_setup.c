@@ -265,6 +265,8 @@ static void DoStandardWildBattle(void)
     StopPlayerAvatar();
     gMain.savedCallback = CB2_EndWildBattle;
         gBattleTypeFlags = 0;
+    gPendingCatchMask = 0;
+    gCatchOtherAlive = FALSE;
     if (HasTwoUsableMons())
     {
         gBattleTypeFlags = BATTLE_TYPE_DOUBLE;

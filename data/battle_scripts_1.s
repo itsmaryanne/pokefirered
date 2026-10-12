@@ -2823,7 +2823,7 @@ BattleScript_GiveExp::
 
 BattleScript_HandleFaintedMon::
 	checkteamslost BattleScript_LinkHandleFaintedMonMultiple
-	jumpifbyte CMP_NOT_EQUAL, gBattleOutcome, 0, BattleScript_FaintedMonEnd
+	jumpifbyte CMP_NOT_EQUAL, gBattleOutcome, 0, BattleScript_FaintedMonEndCheckCatches
 	jumpifbattletype BATTLE_TYPE_TRAINER, BattleScript_FaintedMonTryChoose
 	jumpifword CMP_NO_COMMON_BITS, gHitMarker, HITMARKER_PLAYER_FAINTED, BattleScript_FaintedMonTryChoose
 	printstring STRINGID_USENEXTPKMN
@@ -2887,6 +2887,12 @@ BattleScript_FaintedMonSendOutNew::
 BattleScript_FaintedMonEnd::
 	resetplayerfainted
 	end2
+
+BattleScript_FaintedMonEndCheckCatches::
+        jumpifbyte CMP_NOT_EQUAL, gBattleOutcome, B_OUTCOME_WON, BattleScript_FaintedMonEnd
+        jumpifbyte CMP_EQUAL, gPendingCatchMask, 0, BattleScript_FaintedMonEnd
+        call BattleScript_ProcessPendingCatches
+        goto BattleScript_FaintedMonEnd
 
 BattleScript_LinkHandleFaintedMonMultiple::
 	openpartyscreen BS_FAINTED_LINK_MULTIPLE_1, BattleScript_LinkHandleFaintedMonMultipleStart
