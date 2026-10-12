@@ -1366,3 +1366,12 @@ EventScript_CoopMessage::
 	msgbox gStringVar4, MSGBOX_DEFAULT
 	releaseall
 	end
+
+EventScript_CoopToast::
+	lockall
+	message gStringVar4
+	waitmessage
+	delay 60
+	closemessage
+	releaseall
+	end

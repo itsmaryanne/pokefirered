@@ -3565,19 +3565,24 @@ static void SpriteCB_LinkPlayer(struct Sprite *sprite)
     }
 }
 
-// ---- COOP DEBUG: conexão pelo menu Start, mensagens por script ----
+// ---- COOP DEBUG: conexão pelo menu Start ----
 extern const u8 EventScript_CoopMessage[];
+extern const u8 EventScript_CoopToast[];
 extern u16 Coop_LinkDebugWord(u8 which);
 extern void Coop_LinkTrackReset(void);
 extern void Coop_LinkTrack(void);
+extern void Coop_LinkAdvance(void);
+extern bool8 Coop_PartnerWantsClose(void);
 
-static u8 sCoopStep;        // 0 = teste de mensagem, 1 = pronto para conectar
-static u8 sCoopLinkState;   // 0 = fechado, 1 = conectando, 2 = conectado
+static u8 sCoopLinkState;   // 0 = fechado, 1 = conectando, 2 = conectado, 3 = fechando
 static u16 sCoopLinkTimer;
+static const u8 *sCoopQueued;
+static bool8 sCoopQueuedModal;
+static u8 sCoopDiag[160];
 
-static const u8 sText_CoopMsgOk[] = _("MENSAGEM OK!\nAPERTE COOP DE NOVO.");
-static const u8 sText_CoopConnecting[] = _("CONECTANDO...\nESPERE O OUTRO LADO.");
+static const u8 sText_CoopConnecting[] = _("CONECTANDO...");
 static const u8 sText_CoopConnected[] = _("CONECTADO!");
+static const u8 sText_CoopClosing[] = _("DESCONECTANDO...");
 static const u8 sText_CoopClosed[] = _("DESCONECTADO.");
 static const u8 sText_CoopHeadFail[] = _("SEM CONEXAO.");
 static const u8 sText_CoopHeadLive[] = _("CONECTANDO...");
@@ -3606,15 +3611,15 @@ static u8 *CoopHex(u8 *p, const u8 *label, u32 v, u8 n)
     return ConvertIntToHexStringN(p, v, STR_CONV_MODE_LEADING_ZEROS, n);
 }
 
-static void CoopSay(const u8 *text)
+static void CoopToast(const u8 *text)
 {
-    StringCopy(gStringVar4, text);
-    ScriptContext_SetupScript(EventScript_CoopMessage);
+    sCoopQueued = text;
+    sCoopQueuedModal = FALSE;
 }
 
-static void CoopSayStatus(const u8 *head)
+static void CoopDiag(const u8 *head)
 {
-    u8 *p = StringCopy(gStringVar4, head);
+    u8 *p = StringCopy(sCoopDiag, head);
 
     p = StringCopy(p, sText_CoopNl);
     p = CoopDec(p, sText_CoopLblN, GetLinkPlayerCount_2(), 2);
@@ -3632,17 +3637,21 @@ static void CoopSayStatus(const u8 *head)
     p = CoopDec(p, sText_CoopLblM, Coop_LinkDebugWord(7), 1);
     p = StringCopy(p, sText_CoopNl);
     CoopHex(p, sText_CoopLblLast, Coop_LinkDebugWord(8), 4);
-    ScriptContext_SetupScript(EventScript_CoopMessage);
+    sCoopQueued = sCoopDiag;
+    sCoopQueuedModal = TRUE;
+}
+
+static void CoopFlush(void)
+{
+    if (sCoopQueued == NULL || ScriptContext_IsEnabled() || ArePlayerFieldControlsLocked())
+        return;
+    StringCopy(gStringVar4, sCoopQueued);
+    ScriptContext_SetupScript(sCoopQueuedModal ? EventScript_CoopMessage : EventScript_CoopToast);
+    sCoopQueued = NULL;
 }
 
 void Coop_StartMenuAction(void)
 {
-    if (sCoopStep == 0)
-    {
-        sCoopStep = 1;
-        CoopSay(sText_CoopMsgOk);
-        return;
-    }
     switch (sCoopLinkState)
     {
     case 0:
@@ -3650,34 +3659,66 @@ void Coop_StartMenuAction(void)
         Coop_LinkTrackReset();
         sCoopLinkTimer = 0;
         sCoopLinkState = 1;
-        CoopSay(sText_CoopConnecting);
+        CoopToast(sText_CoopConnecting);
         break;
     case 1:
-        CoopSayStatus(sText_CoopHeadLive);
+        CoopDiag(sText_CoopHeadLive);
         break;
     case 2:
-        CloseLink();
-        sCoopLinkState = 0;
-        CoopSay(sText_CoopClosed);
+        SetCloseLinkCallback();
+        sCoopLinkTimer = 0;
+        sCoopLinkState = 3;
+        CoopToast(sText_CoopClosing);
         break;
     }
 }
 
 static void CoopDebug_Update(u16 newKeys, u16 heldKeys)
 {
-    if (sCoopLinkState == 1)
+    switch (sCoopLinkState)
     {
+    case 1:
         Coop_LinkTrack();
+        Coop_LinkAdvance();
         if (gReceivedRemoteLinkPlayers == TRUE && GetLinkPlayerCount_2() >= 2)
         {
             sCoopLinkState = 2;
-            CoopSay(sText_CoopConnected);
+            CoopToast(sText_CoopConnected);
         }
-        else if (++sCoopLinkTimer > 600)
+        else if (++sCoopLinkTimer > 900)
         {
-            CoopSayStatus(sText_CoopHeadFail);
+            CoopDiag(sText_CoopHeadFail);
             CloseLink();
             sCoopLinkState = 0;
         }
+        break;
+    case 2:
+        if (!gReceivedRemoteLinkPlayers)
+        {
+            sCoopLinkState = 0;
+            CoopToast(sText_CoopClosed);
+        }
+        else if (Coop_PartnerWantsClose())
+        {
+            SetCloseLinkCallback();
+            sCoopLinkTimer = 0;
+            sCoopLinkState = 3;
+            CoopToast(sText_CoopClosing);
+        }
+        break;
+    case 3:
+        if (!gReceivedRemoteLinkPlayers)
+        {
+            sCoopLinkState = 0;
+            CoopToast(sText_CoopClosed);
+        }
+        else if (++sCoopLinkTimer > 300)
+        {
+            CloseLink();
+            sCoopLinkState = 0;
+            CoopToast(sText_CoopClosed);
+        }
+        break;
     }
+    CoopFlush();
 }

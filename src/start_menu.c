@@ -141,6 +141,8 @@ static const struct WindowTemplate sSafariZoneStatsWindowTemplate = {
     .baseBlock = 0x008
 };
 
+static const u8 sStartMenuDesc_Coop[] = _("Conecta com outro\njogador.");
+
 static const u8 *const sStartMenuDescPointers[] = {
     gStartMenuDesc_Pokedex,
     gStartMenuDesc_Pokemon,
@@ -150,7 +152,8 @@ static const u8 *const sStartMenuDescPointers[] = {
     gStartMenuDesc_Option,
     gStartMenuDesc_Exit,
     gStartMenuDesc_Retire,
-    gStartMenuDesc_Player
+    gStartMenuDesc_Player,
+    sStartMenuDesc_Coop
 };
 
 static const struct BgTemplate sBGTemplates_AfterLinkSaveMessage[] = {

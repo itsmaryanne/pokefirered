@@ -25,6 +25,8 @@
 #include "constants/battle.h"
 #include "constants/songs.h"
 #include "sloopsvc.h"
+#include "main.h"
+#include "gba/io_reg.h"
 
 extern u16 gHeldKeyCodeToSend;
 
@@ -57,11 +59,15 @@ static u32 sDummy3; // Never read
 static u8 sLinkTestLastBlockSendPos;
 ALIGNED(8) static u8 sLinkTestLastBlockRecvPos[MAX_LINK_PLAYERS];
 static u8 sNumVBlanksWithoutSerialIntr;
+static u8 sCoopMaxVBlanksWithoutSerialIntr;
 static bool8 sSendBufferEmpty;
 static u16 sSendNonzeroCheck;
 static u16 sRecvNonzeroCheck;
 static u8 sChecksumAvailable;
 static u8 sHandshakePlayerCount;
+
+static u16 sCoopHandshakeFirstRecv;
+static u8 sCoopHandshakeReady;
 
 COMMON_DATA u16 gLinkPartnersHeldKeys[6] = {0};
 COMMON_DATA u32 gLinkDebugSeed = 0;
@@ -1972,8 +1978,11 @@ void LinkVSync(void)
         }
     }
     else if (gLink.state == LINK_STATE_CONN_ESTABLISHED || gLink.state == LINK_STATE_HANDSHAKE)
-    {
-        if (++sNumVBlanksWithoutSerialIntr > 10)
+{
+    if (++sNumVBlanksWithoutSerialIntr > sCoopMaxVBlanksWithoutSerialIntr)
+        sCoopMaxVBlanksWithoutSerialIntr = sNumVBlanksWithoutSerialIntr;
+
+    if (sNumVBlanksWithoutSerialIntr > 10)
         {
             if (gLink.state == LINK_STATE_CONN_ESTABLISHED)
                 gLink.lag = LAG_SLAVE;
@@ -1993,8 +2002,23 @@ void Timer3Intr(void)
     StartTransfer();
 }
 
+static u16 sCoopLastSioCnt;
+static u64 sCoopLastRecv;
+static u16 sCoopSerialCount;
+static u16 sCoopHandshakeCount;
+static u16 sCoopSavedSioCnt;
+static u64 sCoopSavedRecv;
+static u16 sCoopSavedSerialCount;
+static u16 sCoopSavedHandshakeCount;
+
 void SerialCB(void)
 {
+    sCoopSerialCount++;
+    sCoopLastSioCnt = REG_SIOCNT;
+    sCoopLastRecv = REG_SIOMLT_RECV;
+    sCoopSavedSerialCount = sCoopSerialCount;
+    sCoopSavedSioCnt = sCoopLastSioCnt;
+    sCoopSavedRecv = sCoopLastRecv;
     gLink.localId = SIO_MULTI_CNT->id;
     switch (gLink.state)
     {
@@ -2036,6 +2060,13 @@ static bool8 DoHandshake(void)
     u8 playerCount;
     u16 minRecv;
 
+    sCoopHandshakeCount++;
+    sCoopLastSioCnt = REG_SIOCNT;
+    sCoopLastRecv = REG_SIOMLT_RECV;
+    sCoopSavedHandshakeCount = sCoopHandshakeCount;
+    sCoopSavedSioCnt = sCoopLastSioCnt;
+    sCoopSavedRecv = sCoopLastRecv;
+
     playerCount = 0;
     minRecv = 0xFFFF;
     if (gLink.handshakeAsMaster == TRUE)
@@ -2043,6 +2074,7 @@ static bool8 DoHandshake(void)
     else
         REG_SIOMLT_SEND = SLAVE_HANDSHAKE;
     *(u64 *)gLink.tempRecvBuffer = REG_SIOMLT_RECV;
+    sCoopHandshakeFirstRecv = gLink.tempRecvBuffer[0];
     REG_SIOMLT_RECV = 0;
     gLink.handshakeAsMaster = FALSE;
     for (i = 0; i < 4; i++)
@@ -2061,6 +2093,9 @@ static bool8 DoHandshake(void)
         }
     }
     gLink.playerCount = playerCount;
+    sCoopHandshakeReady = (gLink.playerCount > 1
+    && gLink.playerCount == sHandshakePlayerCount
+    && gLink.tempRecvBuffer[0] == MASTER_HANDSHAKE);
     if (gLink.playerCount > 1 && gLink.playerCount == sHandshakePlayerCount && gLink.tempRecvBuffer[0] == MASTER_HANDSHAKE)
         return TRUE;
 
@@ -2208,6 +2243,10 @@ static u16 sCoopLastStatus;
 
 void Coop_LinkTrackReset(void)
 {
+    sCoopLastSioCnt = 0;
+    sCoopLastRecv = 0;
+    sCoopSerialCount = 0;
+    sCoopHandshakeCount = 0;
     sCoopMaxState = 0;
     sCoopMaxPlayers = 0;
     sCoopEverMaster = 0;
@@ -2238,6 +2277,35 @@ u16 Coop_LinkDebugWord(u8 which)
     case 6: return sCoopMaxPlayers;
     case 7: return sCoopEverMaster;
     case 8: return sCoopLastStatus;
+    case 9: return sCoopSavedSioCnt;
+    case 10: return (u16)sCoopSavedRecv;
+    case 11: return (u16)(sCoopSavedRecv >> 16);
+    case 12: return sCoopSavedSerialCount;
+    case 13: return sCoopSavedHandshakeCount;
+    case 14: return gMain.serialCallback != NULL;
+    case 15: return REG_IE & INTR_FLAG_SERIAL ? 1 : 0;
+    case 16: return sCoopHandshakeFirstRecv;
+    case 17: return sCoopHandshakeReady;
+    case 18: return sCoopMaxVBlanksWithoutSerialIntr;
     }
     return 0;
+}
+
+void Coop_LinkAdvance(void)
+{
+    if ((gLinkStatus & LINK_STAT_MASTER)
+     && !(gLinkStatus & LINK_STAT_CONN_ESTABLISHED)
+     && gLink.state == LINK_STATE_HANDSHAKE
+     && gLink.playerCount > 1)
+        gShouldAdvanceLinkState = 1;
+}
+
+bool8 Coop_PartnerWantsClose(void)
+{
+    u8 i;
+
+    for (i = 0; i < MAX_LINK_PLAYERS; i++)
+        if (i != gLink.localId && gReadyToCloseLink[i])
+            return TRUE;
+    return FALSE;
 }
