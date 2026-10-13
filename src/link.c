@@ -157,6 +157,8 @@ static void LinkCB_ReadyCloseLink(void);
 static void LinkCB_WaitCloseLink(void);
 static void LinkCB_Standby(void);
 static void LinkCB_StandbyForAll(void);
+static u32 sCoopErrStatus;
+static u8 sCoopErrWhy;
 static void CheckErrorStatus(void);
 static void CB2_PrintErrorMessage(void);
 static void SetWirelessCommType0_Internal(void);
@@ -634,7 +636,16 @@ static void ProcessRecvCmds(u8 unused)
                     ConvertLinkPlayerName(linkPlayer);
                     if (strcmp(block->magic1, sASCIIGameFreakInc) != 0
                      || strcmp(block->magic2, sASCIIGameFreakInc) != 0)
-                        SetMainCallback2(CB2_LinkError);
+                    {
+                        if (gSuppressLinkErrorMessage)
+                        {
+                            sCoopErrWhy = 2;
+                            gLinkErrorOccurred = TRUE;
+                            CloseLink();
+                        }
+                        else
+                            SetMainCallback2(CB2_LinkError);
+                    }
                     else
                         HandleReceiveRemoteLinkPlayer(i);
                 }
@@ -1427,6 +1438,8 @@ static void CheckErrorStatus(void)
             sLinkErrorBuffer.lastSendQueueCount = gLastSendQueueCount;
             SetMainCallback2(CB2_LinkError);
         }
+        sCoopErrStatus = gLinkStatus;
+        sCoopErrWhy = 1;
         gLinkErrorOccurred = TRUE;
         CloseLink();
     }
@@ -2290,6 +2303,8 @@ u16 Coop_LinkDebugWord(u8 which)
     case 6: return sCoopMaxPlayers;
     case 7: return sCoopEverMaster;
     case 8: return sCoopLastStatus;
+    case 9: return (sCoopErrStatus >> 12) & 0x7F;
+    case 10: return sCoopErrWhy;
     case 9: return sCoopSavedSioCnt;
     case 10: return (u16)sCoopSavedRecv;
     case 11: return (u16)(sCoopSavedRecv >> 16);

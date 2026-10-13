@@ -3616,37 +3616,31 @@ static u8 *CoopHex(u8 *p, const u8 *label, u32 v, u8 n)
 
 static void CoopToast(const u8 *text)
 {
-    sCoopQueued = text;
-    sCoopQueuedModal = FALSE;
 }
+
+static void CoopDiag(const u8 *head)
+{
+    u8 *p = Strstatic const u8 sText_CoopSp[] = _(" ");
+static const u8 sText_CoopLblE[] = _(" E=");
+static const u8 sText_CoopLblW[] = _(" W=");
 
 static void CoopDiag(const u8 *head)
 {
     u8 *p = StringCopy(sCoopDiag, head);
 
-    p = StringCopy(p, sText_CoopNl);
-    p = CoopDec(p, sText_CoopLblN, GetLinkPlayerCount_2(), 2);
-    p = CoopDec(p, sText_CoopLblR, gReceivedRemoteLinkPlayers, 1);
-    p = CoopHex(p, sText_CoopLblS, gLinkStatus, 4);
-    p = StringCopy(p, sText_CoopPage);
+    p = StringCopy(p, sText_CoopSp);
     p = CoopDec(p, sText_CoopLblSt, Coop_LinkDebugWord(0), 1);
     p = CoopDec(p, sText_CoopLblP, Coop_LinkDebugWord(1), 1);
-    p = CoopDec(p, sText_CoopLblId, Coop_LinkDebugWord(2), 1);
     p = CoopDec(p, sText_CoopLblM, Coop_LinkDebugWord(3), 1);
-    p = CoopDec(p, sText_CoopLblA, Coop_LinkDebugWord(4), 1);
-    p = StringCopy(p, sText_CoopPage);
-    p = CoopDec(p, sText_CoopLblMax, Coop_LinkDebugWord(5), 1);
-    p = CoopDec(p, sText_CoopLblP, Coop_LinkDebugWord(6), 1);
-    p = CoopDec(p, sText_CoopLblM, Coop_LinkDebugWord(7), 1);
     p = StringCopy(p, sText_CoopNl);
-    CoopHex(p, sText_CoopLblLast, Coop_LinkDebugWord(8), 4);
+    p = CoopDec(p, sText_CoopLblMax, Coop_LinkDebugWord(5), 1);
+    p = CoopHex(p, sText_CoopLblS, gLinkStatus, 4);
+    p = CoopHex(p, sText_CoopLblE, Coop_LinkDebugWord(9), 2);
+    p = CoopDec(p, sText_CoopLblW, Coop_LinkDebugWord(10), 1);
     sCoopQueued = sCoopDiag;
     sCoopQueuedModal = TRUE;
 }
-
-static void CoopFlush(void)
-{
-    if (sCoopQueued == NULL || ScriptContext_IsEnabled() || ArePlayerFieldControlsLocked())
+NULL || ScriptContext_IsEnabled() || ArePlayerFieldControlsLocked())
         return;
     StringCopy(gStringVar4, sCoopQueued);
     ScriptContext_SetupScript(sCoopQueuedModal ? EventScript_CoopMessage : EventScript_CoopToast);
@@ -3950,6 +3944,88 @@ static void CoopAvatarTick(u16 held)
     sCoopLastY = pl->currentCoords.y;
 }
 
+#define TAG_COOP_IND 55300
+#define COOP_DOT(c) \
+    0x00, (c) * 0x11, (c) * 0x11, 0x00, \
+    (c) << 4, (c) * 0x11, (c) * 0x11, (c), \
+    (c) * 0x11, (c) * 0x11, (c) * 0x11, (c) * 0x11, \
+    (c) * 0x11, (c) * 0x11, (c) * 0x11, (c) * 0x11, \
+    (c) * 0x11, (c) * 0x11, (c) * 0x11, (c) * 0x11, \
+    (c) * 0x11, (c) * 0x11, (c) * 0x11, (c) * 0x11, \
+    (c) << 4, (c) * 0x11, (c) * 0x11, (c), \
+    0x00, (c) * 0x11, (c) * 0x11, 0x00
+
+extern const struct OamData gOamData_AffineOff_ObjNormal_8x8;
+
+static const u8 sCoopIndTiles[] = { COOP_DOT(1), COOP_DOT(2), COOP_DOT(3) };
+// 1 = amarelo, 2 = verde, 3 = vermelho
+static const u16 sCoopIndPalData[16] = { 0x0000, 0x03FF, 0x03E0, 0x001F };
+static const struct SpriteSheet sCoopIndSheet = { sCoopIndTiles, sizeof(sCoopIndTiles), TAG_COOP_IND };
+static const struct SpritePalette sCoopIndPal = { sCoopIndPalData, TAG_COOP_IND };
+static const union AnimCmd sCoopIndAnim0[] = { ANIMCMD_FRAME(0, 1), ANIMCMD_END };
+static const union AnimCmd sCoopIndAnim1[] = { ANIMCMD_FRAME(1, 1), ANIMCMD_END };
+static const union AnimCmd sCoopIndAnim2[] = { ANIMCMD_FRAME(2, 1), ANIMCMD_END };
+static const union AnimCmd *const sCoopIndAnims[] = { sCoopIndAnim0, sCoopIndAnim1, sCoopIndAnim2 };
+static const struct SpriteTemplate sCoopIndTemplate =
+{
+    .tileTag = TAG_COOP_IND,
+    .paletteTag = TAG_COOP_IND,
+    .oam = &gOamData_AffineOff_ObjNormal_8x8,
+    .anims = sCoopIndAnims,
+    .images = NULL,
+    .affineAnims = gDummySpriteAffineAnimTable,
+    .callback = SpriteCallbackDummy,
+};
+
+static u8 sCoopIndId = 0xFF;
+static u16 sCoopRedTimer;
+
+static bool8 CoopIndAlive(void)
+{
+    return sCoopIndId != 0xFF && gSprites[sCoopIndId].inUse && gSprites[sCoopIndId].template == &sCoopIndTemplate;
+}
+
+static void CoopIndicatorTick(void)
+{
+    u8 want;
+
+    if (sCoopLinkState == 2)
+        want = 1;
+    else if (sCoopLinkState != 0)
+        want = 0;
+    else if (sCoopRedTimer != 0)
+    {
+        sCoopRedTimer--;
+        want = 2;
+    }
+    else
+        want = 3;
+
+    if (want == 3)
+    {
+        if (CoopIndAlive())
+            DestroySprite(&gSprites[sCoopIndId]);
+        sCoopIndId = 0xFF;
+        return;
+    }
+    if (!CoopIndAlive())
+    {
+        if (GetSpriteTileStartByTag(TAG_COOP_IND) == 0xFFFF)
+            LoadSpriteSheet(&sCoopIndSheet);
+        if (IndexOfSpritePaletteTag(TAG_COOP_IND) == 0xFF)
+            LoadSpritePalette(&sCoopIndPal);
+        sCoopIndId = CreateSprite(&sCoopIndTemplate, 10, 10, 0);
+        if (sCoopIndId >= MAX_SPRITES)
+        {
+            sCoopIndId = 0xFF;
+            return;
+        }
+        gSprites[sCoopIndId].oam.priority = 0;
+    }
+    if (gSprites[sCoopIndId].animNum != want)
+        StartSpriteAnim(&gSprites[sCoopIndId], want);
+}
+
 static void CoopDebug_Update(u16 newKeys, u16 heldKeys)
 {
     switch (sCoopLinkState)
@@ -3964,6 +4040,7 @@ static void CoopDebug_Update(u16 newKeys, u16 heldKeys)
         }
         else if (++sCoopLinkTimer > 900)
         {
+            sCoopRedTimer = 240;
             CoopDiag(sText_CoopHeadFail);
             CloseLink();
             sCoopLinkState = 0;
@@ -4013,5 +4090,6 @@ static void CoopDebug_Update(u16 newKeys, u16 heldKeys)
         CoopAvatarTick(heldKeys);
     else
         CoopAvatarsOff();
+    CoopIndicatorTick();
     CoopFlush();
 }
