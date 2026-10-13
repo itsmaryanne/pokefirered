@@ -3573,6 +3573,8 @@ extern void Coop_LinkTrackReset(void);
 extern void Coop_LinkTrack(void);
 extern void Coop_LinkAdvance(void);
 extern bool8 Coop_PartnerWantsClose(void);
+extern bool8 Coop_LinkErrored(void);
+extern void Coop_LinkSuppressErrors(bool8 on);
 
 static u8 sCoopLinkState;   // 0 = fechado, 1 = conectando, 2 = conectado, 3 = fechando
 static u16 sCoopLinkTimer;
@@ -3584,6 +3586,7 @@ static const u8 sText_CoopConnecting[] = _("CONECTANDO...");
 static const u8 sText_CoopConnected[] = _("CONECTADO!");
 static const u8 sText_CoopClosing[] = _("DESCONECTANDO...");
 static const u8 sText_CoopClosed[] = _("DESCONECTADO.");
+static const u8 sText_CoopReconnecting[] = _("RECONECTANDO...");
 static const u8 sText_CoopHeadFail[] = _("SEM CONEXAO.");
 static const u8 sText_CoopHeadLive[] = _("CONECTANDO...");
 static const u8 sText_CoopNl[] = _("\n");
@@ -3657,6 +3660,7 @@ void Coop_StartMenuAction(void)
     case 0:
         OpenLink();
         Coop_LinkTrackReset();
+        Coop_LinkSuppressErrors(TRUE);
         sCoopLinkTimer = 0;
         sCoopLinkState = 1;
         CoopToast(sText_CoopConnecting);
@@ -3966,10 +3970,12 @@ static void CoopDebug_Update(u16 newKeys, u16 heldKeys)
         }
         break;
     case 2:
-        if (!gReceivedRemoteLinkPlayers)
+        if (!gReceivedRemoteLinkPlayers || Coop_LinkErrored())
         {
-            sCoopLinkState = 0;
-            CoopToast(sText_CoopClosed);
+            CloseLink();
+            sCoopLinkTimer = 0;
+            sCoopLinkState = 4;
+            CoopToast(sText_CoopReconnecting);
         }
         else if (Coop_PartnerWantsClose())
         {
@@ -3990,6 +3996,16 @@ static void CoopDebug_Update(u16 newKeys, u16 heldKeys)
             CloseLink();
             sCoopLinkState = 0;
             CoopToast(sText_CoopClosed);
+        }
+        break;
+    case 4:
+        if (++sCoopLinkTimer > 90)
+        {
+            OpenLink();
+            Coop_LinkSuppressErrors(TRUE);
+            Coop_LinkTrackReset();
+            sCoopLinkTimer = 0;
+            sCoopLinkState = 1;
         }
         break;
     }

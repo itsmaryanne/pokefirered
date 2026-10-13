@@ -2355,3 +2355,13 @@ void Coop_LinkResetRemote(void)
     for (i = 0; i < MAX_LINK_PLAYERS; i++)
         sCoopRemoteValid[i] = FALSE;
 }
+
+bool8 Coop_LinkErrored(void)
+{
+    return gLinkErrorOccurred;
+}
+
+void Coop_LinkSuppressErrors(bool8 on)
+{
+    gSuppressLinkErrorMessage = on;
+}
