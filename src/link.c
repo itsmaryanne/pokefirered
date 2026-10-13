@@ -546,6 +546,11 @@ static void HandleReceiveRemoteLinkPlayer(u8 who)
         gReceivedRemoteLinkPlayers = TRUE;
 }
 
+#define LINKCMD_COOP_POS 0xC0DE
+
+static u16 sCoopRemote[MAX_LINK_PLAYERS][5];
+static u8 sCoopRemoteValid[MAX_LINK_PLAYERS];
+
 static void ProcessRecvCmds(u8 unused)
 {
     u16 i;
@@ -654,6 +659,14 @@ static void ProcessRecvCmds(u8 unused)
             break;
         case LINKCMD_SEND_HELD_KEYS:
             gLinkPartnersHeldKeys[i] = gRecvCmds[i][1];
+            break;
+        case LINKCMD_COOP_POS:
+            sCoopRemote[i][0] = gRecvCmds[i][1];
+            sCoopRemote[i][1] = gRecvCmds[i][2];
+            sCoopRemote[i][2] = gRecvCmds[i][3];
+            sCoopRemote[i][3] = gRecvCmds[i][4];
+            sCoopRemote[i][4] = gRecvCmds[i][5];
+            sCoopRemoteValid[i] = TRUE;
             break;
         }
     }
@@ -2308,4 +2321,37 @@ bool8 Coop_PartnerWantsClose(void)
         if (i != gLink.localId && gReadyToCloseLink[i])
             return TRUE;
     return FALSE;
+}
+
+void Coop_LinkSend(u16 a, u16 b, u16 c, u16 d, u16 e)
+{
+    if (gReceivedRemoteLinkPlayers != TRUE || gLinkTransferringData)
+        return;
+    if (gSendCmd[0] != 0 && gSendCmd[0] != LINKCMD_NONE)
+        return;
+    gSendCmd[0] = LINKCMD_COOP_POS;
+    gSendCmd[1] = a;
+    gSendCmd[2] = b;
+    gSendCmd[3] = c;
+    gSendCmd[4] = d;
+    gSendCmd[5] = e;
+}
+
+bool8 Coop_LinkGetRemote(u8 id, u16 *out)
+{
+    u8 i;
+
+    if (id >= MAX_LINK_PLAYERS || !sCoopRemoteValid[id])
+        return FALSE;
+    for (i = 0; i < 5; i++)
+        out[i] = sCoopRemote[id][i];
+    return TRUE;
+}
+
+void Coop_LinkResetRemote(void)
+{
+    u8 i;
+
+    for (i = 0; i < MAX_LINK_PLAYERS; i++)
+        sCoopRemoteValid[i] = FALSE;
 }
