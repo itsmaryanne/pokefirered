@@ -3677,38 +3677,147 @@ extern void Coop_LinkSend(u16 a, u16 b, u16 c, u16 d, u16 e);
 extern bool8 Coop_LinkGetRemote(u8 id, u16 *out);
 extern void Coop_LinkResetRemote(void);
 
+#ifndef OBJECT_EVENTS_COUNT
+#define OBJECT_EVENTS_COUNT 16
+#endif
+#define COOP_OE_MARK 0xFE
+
 static u16 sCoopSendTimer;
 static u16 sCoopSeq;
 static bool8 sCoopAvatarsOn;
+static u8 sCoopRetry[MAX_LINK_PLAYERS];
+static u8 sCoopBlocked;
+static u8 sCoopGhost;
+static s16 sCoopLastX;
+static s16 sCoopLastY;
+static bool8 sCoopFailShown;
+
+static const u8 sText_CoopFailSlot[] = _("AVATAR: SEM SLOT\nDE OBJETO.");
+static const u8 sText_CoopFailSprite[] = _("AVATAR: SEM SPRITE\nOU PALETA.");
+
+static void SpriteCB_CoopAvatar(struct Sprite *sprite)
+{
+    struct LinkPlayerObjectEvent *lp = &gLinkPlayerObjectEvents[sprite->data[0]];
+    struct ObjectEvent *oe = &gObjectEvents[lp->objEventId];
+    s16 dx = sprite->data[1] - sprite->x;
+    s16 dy = sprite->data[2] - sprite->y;
+    s16 adx = dx < 0 ? -dx : dx;
+    s16 ady = dy < 0 ? -dy : dy;
+    s16 step = 1;
+    bool8 moving = TRUE;
+
+    if (adx > 40 || ady > 40)
+    {
+        sprite->x = sprite->data[1];
+        sprite->y = sprite->data[2];
+        moving = FALSE;
+    }
+    else if (dx == 0 && dy == 0)
+    {
+        moving = FALSE;
+    }
+    else
+    {
+        if (adx > 18 || ady > 18)
+            step = 2;
+        if (adx != 0)
+            sprite->x += (dx > 0 ? 1 : -1) * (adx < step ? adx : step);
+        if (ady != 0)
+            sprite->y += (dy > 0 ? 1 : -1) * (ady < step ? ady : step);
+    }
+    SetObjectSubpriorityByElevation(oe->previousElevation, sprite, 1);
+    sprite->oam.priority = ElevationToPriority(oe->previousElevation);
+    if (moving)
+        StartSpriteAnimIfDifferent(sprite, GetMoveDirectionAnimNum(sprite->data[3]));
+    else
+        StartSpriteAnimIfDifferent(sprite, GetFaceDirectionAnimNum(sprite->data[3]));
+    UpdateObjectEventSpriteInvisibility(sprite, FALSE);
+}
 
 static bool8 CoopAvatarValid(u8 id)
 {
     struct LinkPlayerObjectEvent *lp = &gLinkPlayerObjectEvents[id];
     struct ObjectEvent *oe;
 
-    if (!lp->active)
+    if (!lp->active || lp->objEventId >= OBJECT_EVENTS_COUNT)
         return FALSE;
     oe = &gObjectEvents[lp->objEventId];
     return oe->active
+        && oe->localId == COOP_OE_MARK
         && oe->spriteId < MAX_SPRITES
         && gSprites[oe->spriteId].inUse
-        && gSprites[oe->spriteId].callback == SpriteCB_LinkPlayer;
+        && gSprites[oe->spriteId].callback == SpriteCB_CoopAvatar;
 }
 
 static void CoopRemoveAvatar(u8 id)
 {
     struct LinkPlayerObjectEvent *lp = &gLinkPlayerObjectEvents[id];
-    struct ObjectEvent *oe;
 
-    if (!lp->active)
-        return;
     if (CoopAvatarValid(id))
     {
-        oe = &gObjectEvents[lp->objEventId];
+        struct ObjectEvent *oe = &gObjectEvents[lp->objEventId];
+
         DestroySprite(&gSprites[oe->spriteId]);
         oe->active = FALSE;
     }
     lp->active = FALSE;
+}
+
+static void CoopReapOrphans(void)
+{
+    u8 s, i;
+
+    for (s = 0; s < OBJECT_EVENTS_COUNT; s++)
+    {
+        struct ObjectEvent *oe = &gObjectEvents[s];
+        bool8 owned = FALSE;
+
+        if (!oe->active || oe->localId != COOP_OE_MARK)
+            continue;
+        for (i = 0; i < MAX_LINK_PLAYERS; i++)
+            if (gLinkPlayerObjectEvents[i].active && gLinkPlayerObjectEvents[i].objEventId == s && CoopAvatarValid(i))
+                owned = TRUE;
+        if (!owned)
+            oe->active = FALSE;
+    }
+}
+
+// retorna 0 = ok, 1 = sem slot de objeto, 2 = sem sprite
+static u8 CoopSpawnAvatar(u8 id, s16 x, s16 y, u8 gender)
+{
+    struct LinkPlayerObjectEvent *lp = &gLinkPlayerObjectEvents[id];
+    struct ObjectEvent *oe;
+    struct Sprite *spr;
+    s16 px, py;
+    u8 sid;
+
+    if (GetFirstInactiveObjectEventId() >= OBJECT_EVENTS_COUNT)
+        return 1;
+    SpawnLinkPlayerObjectEvent(id, x, y, gender);
+    oe = &gObjectEvents[lp->objEventId];
+    sid = CreateObjectGraphicsSprite(GetRSAvatarGraphicsIdByGender(gender), SpriteCB_CoopAvatar, 0, 0, 0);
+    if (sid >= MAX_SPRITES)
+    {
+        oe->active = FALSE;
+        lp->active = FALSE;
+        return 2;
+    }
+    oe->spriteId = sid;
+    oe->localId = COOP_OE_MARK;
+    oe->triggerGroundEffectsOnMove = FALSE;
+    spr = &gSprites[sid];
+    spr->coordOffsetEnabled = TRUE;
+    SetSpritePosToMapCoords(x, y, &px, &py);
+    px += 8;
+    spr->x = px;
+    spr->y = py;
+    spr->data[0] = id;
+    spr->data[1] = px;
+    spr->data[2] = py;
+    spr->data[3] = DIR_SOUTH;
+    spr->data[4] = x;
+    spr->data[5] = y;
+    return 0;
 }
 
 static void CoopAvatarsOff(void)
@@ -3718,28 +3827,48 @@ static void CoopAvatarsOff(void)
     if (!sCoopAvatarsOn)
         return;
     for (i = 0; i < MAX_LINK_PLAYERS; i++)
+    {
         CoopRemoveAvatar(i);
+        sCoopRetry[i] = 0;
+    }
     Coop_LinkResetRemote();
     sCoopAvatarsOn = FALSE;
+    sCoopFailShown = FALSE;
+    sCoopGhost = 0;
+    sCoopBlocked = 0;
 }
 
-static void CoopAvatarTick(void)
+static void CoopAvatarTick(u16 held)
 {
     u8 me = GetMultiplayerId();
     u8 i;
     struct ObjectEvent *pl = &gObjectEvents[gPlayerAvatar.objectEventId];
     u16 here = (gSaveBlock1Ptr->location.mapGroup << 8) | (u8)gSaveBlock1Ptr->location.mapNum;
+    s16 fx = pl->currentCoords.x;
+    s16 fy = pl->currentCoords.y;
+    bool8 pushing = FALSE;
 
     sCoopAvatarsOn = TRUE;
     if ((++sCoopSendTimer & 3) == 0)
         Coop_LinkSend(pl->currentCoords.x, pl->currentCoords.y, here,
                       pl->facingDirection | (gSaveBlock2Ptr->playerGender << 8), ++sCoopSeq);
+    CoopReapOrphans();
+
+    if (held & DPAD_UP)
+        fy--;
+    else if (held & DPAD_DOWN)
+        fy++;
+    else if (held & DPAD_LEFT)
+        fx--;
+    else if (held & DPAD_RIGHT)
+        fx++;
 
     for (i = 0; i < MAX_LINK_PLAYERS; i++)
     {
         u16 d[5];
         s16 dx, dy;
         struct ObjectEvent *oe;
+        struct Sprite *spr;
 
         if (i == me || !Coop_LinkGetRemote(i, d))
             continue;
@@ -3752,16 +3881,69 @@ static void CoopAvatarTick(void)
         }
         if (!CoopAvatarValid(i))
         {
-            gLinkPlayerObjectEvents[i].active = FALSE;
-            SpawnLinkPlayerObjectEvent(i, d[0], d[1], d[3] >> 8);
-            CreateLinkPlayerSprite(i, VERSION_FIRE_RED);
-            gObjectEvents[gLinkPlayerObjectEvents[i].objEventId].localId = 0xFF;
+            u8 err;
+
+            if (sCoopRetry[i] != 0)
+            {
+                sCoopRetry[i]--;
+                continue;
+            }
+            CoopRemoveAvatar(i);
+            err = CoopSpawnAvatar(i, d[0], d[1], d[3] >> 8);
+            if (err != 0)
+            {
+                sCoopRetry[i] = 120;
+                if (!sCoopFailShown)
+                {
+                    sCoopFailShown = TRUE;
+                    CoopToast(err == 1 ? sText_CoopFailSlot : sText_CoopFailSprite);
+                }
+                continue;
+            }
         }
         oe = &gObjectEvents[gLinkPlayerObjectEvents[i].objEventId];
-        if (oe->currentCoords.x != (s16)d[0] || oe->currentCoords.y != (s16)d[1])
+        spr = &gSprites[oe->spriteId];
+        if (spr->data[4] != (s16)d[0] || spr->data[5] != (s16)d[1])
+        {
+            s16 px, py;
+
             InitLinkPlayerObjectEventPos(oe, d[0], d[1]);
-        linkDirection(oe) = d[3] & 0xFF;
+            SetSpritePosToMapCoords(d[0], d[1], &px, &py);
+            spr->data[1] = px + 8;
+            spr->data[2] = py;
+            spr->data[4] = d[0];
+            spr->data[5] = d[1];
+        }
+        spr->data[3] = d[3] & 0xFF;
+        if ((s16)d[0] == fx && (s16)d[1] == fy && (fx != pl->currentCoords.x || fy != pl->currentCoords.y))
+            pushing = TRUE;
+        if (sCoopGhost != 0)
+        {
+            oe->currentCoords.x = oe->previousCoords.x = pl->currentCoords.x;
+            oe->currentCoords.y = oe->previousCoords.y = pl->currentCoords.y;
+        }
+        else
+        {
+            oe->currentCoords.x = oe->previousCoords.x = d[0];
+            oe->currentCoords.y = oe->previousCoords.y = d[1];
+        }
     }
+    if (sCoopGhost != 0)
+        sCoopGhost--;
+    if (pushing && pl->currentCoords.x == sCoopLastX && pl->currentCoords.y == sCoopLastY)
+    {
+        if (++sCoopBlocked > 45)
+        {
+            sCoopGhost = 120;
+            sCoopBlocked = 0;
+        }
+    }
+    else
+    {
+        sCoopBlocked = 0;
+    }
+    sCoopLastX = pl->currentCoords.x;
+    sCoopLastY = pl->currentCoords.y;
 }
 
 static void CoopDebug_Update(u16 newKeys, u16 heldKeys)
@@ -3812,7 +3994,7 @@ static void CoopDebug_Update(u16 newKeys, u16 heldKeys)
         break;
     }
     if (sCoopLinkState == 2)
-        CoopAvatarTick();
+        CoopAvatarTick(heldKeys);
     else
         CoopAvatarsOff();
     CoopFlush();
