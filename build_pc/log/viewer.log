@@ -1,0 +1,18 @@
+pc/viewer.c: In function ‘main’:
+pc/viewer.c:321:87: warning: ‘%s’ directive output may be truncated writing up to 127 bytes into a region of size 72 [-Wformat-truncation=]
+  321 |             if (gTcp && !gConnected) snprintf(st, sizeof st, " - aguardando o jogo em %s:%s", gHost, gPort);
+      |                                                                                       ^~      ~~~~~
+In file included from /usr/include/stdio.h:974,
+                 from /usr/include/SDL2/SDL_stdinc.h:39,
+                 from /usr/include/SDL2/SDL_main.h:25,
+                 from /usr/include/SDL2/SDL.h:31,
+                 from pc/viewer.c:9:
+In function ‘snprintf’,
+    inlined from ‘main’ at pc/viewer.c:321:38:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:68:10: note: ‘__builtin___snprintf_chk’ output between 26 and 168 bytes into a destination of size 96
+   68 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   69 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   70 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~

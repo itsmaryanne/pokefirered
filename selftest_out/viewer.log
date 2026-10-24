@@ -1,0 +1,5 @@
+viewer: snapshot selftest_out/f100.bmp no quadro 100
+viewer: snapshot selftest_out/f230.bmp no quadro 230
+viewer: snapshot selftest_out/f700.bmp no quadro 700
+viewer: snapshot selftest_out/f1700.bmp no quadro 1700
+viewer: snapshot selftest_out/f2100.bmp no quadro 2100

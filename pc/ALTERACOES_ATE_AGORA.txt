@@ -1,0 +1,241 @@
+POKEMON FIRERED PC - ALTERACOES ATE AGORA
+==========================================
+
+Data do resumo: 24/10/2026
+Projeto: pret/pokefirered portado para PC em WSL2/Windows.
+
+REGRA DO PROJETO
+----------------
+- O codigo original do jogo nao e alterado diretamente.
+- Alteracoes especificas do PC ficam em pc/ ou em copias geradas em build_pc/patched/.
+- O jogo e compilado em 32 bits com gcc -m32.
+- O usuario compila e testa; os resultados sao enviados por logs e imagens.
+
+
+1. CAMADA PC IMPLEMENTADA
+-------------------------
+
+Arquivos principais da camada PC:
+
+- pc/pc_main.c
+  Mapeia a memoria do GBA nos enderecos originais: EWRAM, IWRAM, IO, paleta,
+  VRAM e OAM. Inicia o jogo e os handlers de falha.
+
+- pc/bios.c
+  Implementacoes em C de rotinas da BIOS do GBA usadas pelo jogo, incluindo
+  operacoes de memoria, compressao, divisao, raiz e espera de V-blank.
+
+- pc/dma.c
+  Simulacao dos canais DMA do GBA.
+
+- pc/intr.c
+  Entrega das interrupcoes simuladas para o jogo.
+
+- pc/ppu_timing.c
+  Simula VCOUNT, DISPSTAT, V-blank e H-blank em uma thread de temporizacao.
+  Implementa o passo travado: o V-blank espera o loop principal responder.
+  Tambem le velocidade de fast-forward e entrada compartilhada.
+
+- pc/ppu.c
+  Renderizador por software para fundos, janelas, tiles, sprites, paletas,
+  blending e efeitos basicos.
+
+- pc/audio.c, pc/m4a_engine.c, pc/sound_stub.c, pc/m4a_real.c
+  Camada de audio e sequenciador M4A em C, com saida PCM para o visualizador.
+
+- pc/flash_file.c
+  Save em arquivo pokefirered.sav com 128 KB.
+
+- pc/viewer.c
+  Visualizador SDL2, teclado, controle, audio, fullscreen, FPS, snapshots,
+  fast-forward e conexao TCP.
+
+- pc/net_bridge.c
+  Ponte TCP entre o processo 32-bit do jogo no WSL e o visualizador nativo
+  do Windows.
+
+- pc/crash.c
+  Diagnostico de SIGSEGV e outros sinais, com EIP, endereco acessado,
+  registradores e pilha simbolizada.
+
+- pc/pc_compat.h
+  Declaracoes das funcoes de compatibilidade usadas pelos patches PC.
+
+
+2. COMPILACAO E EXECUCAO
+------------------------
+
+- pc/build.sh compila o jogo, os dados, as musicas e o visualizador.
+- pc/cc_one.sh faz pre-processamento, patches em copias e compilacao de cada
+  arquivo C do jogo.
+- pc/patch_src.pl transforma assembly ARM ou comportamentos incompatíveis em
+  codigo C somente na copia build_pc/patched/.
+- pc/run_windows.sh recompila quando necessario, inicia o jogo no WSL e abre
+  pc_viewer.exe no Windows pela porta TCP 47474.
+- pc/build_windows.sh compila o visualizador SDL2 para Windows.
+- pc/run.sh permite executar com visualizador local por memoria compartilhada.
+
+
+3. TEMPORIZACAO E FAST-FORWARD
+------------------------------
+
+- O passo travado do V-blank foi limitado para nao prender o processo:
+  espera normal de aproximadamente 40 ms e limite menor apos detectar stall.
+- O aviso de loop lento foi reduzido para evitar excesso de diagnosticos.
+- Tab ativa velocidade 8x pelo campo speed da memoria compartilhada/TCP.
+- O audio e silenciado durante o fast-forward.
+- FPS e musica ficaram estaveis durante transicoes e movimentacao.
+
+
+4. SAVE E MEMORIA FLASH
+-----------------------
+
+- EraseFlashSector e ProgramFlashByte foram ligados como ponteiros de funcao,
+  conforme o header do jogo.
+- Antes disso o jogo saltava para bytes do proprio codigo e podia cair com
+  SIGSEGV ao salvar.
+- O save passou a gravar em pokefirered.sav.
+- A tela Continue consegue ler nome, tempo e insignias do save.
+
+
+5. RFU / WIRELESS DESATIVADO NO PC
+-----------------------------------
+
+- Chamadas HandleLinkConnection foram desativadas no main patchado.
+- Interrupcoes SERIAL e TIMER3 nao sao despachadas pela camada PC.
+- O loop dependente de timer de hardware em librfu_stwi foi removido na copia.
+- rfu_initializeAPI nao copia o handler de interrupcao para RAM no PC.
+  Essa copia estourava o buffer e corrompia sHeapStart.
+- InitUnionRoom retorna imediatamente no PC.
+- BufferUnionRoomPlayerName retorna FALSE no PC.
+- Isso evita travamentos na Union Room e dialogos incorretos da Enfermeira Joy.
+
+
+6. CORRECOES DE BUGS DO PORT
+----------------------------
+
+- naming_screen:
+  FREE_AND_SET_NULL(sNamingScreen) foi substituido por Free(sNamingScreen)
+  na copia PC. No GBA uma leitura posterior de NULL podia ser inofensiva;
+  no PC causava SIGSEGV.
+
+- dma3_manager:
+  Duas verificacoes dependentes de VCOUNT/WRAM foram condicionadas para nao
+  descartar transferencias validas no renderizador PC.
+
+- bg:
+  A checagem de endereco fora da WRAM foi adaptada para o heap do PC.
+
+- gpu_regs:
+  SetGpuReg grava imediatamente no PC, pois a fila baseada em VCOUNT nao
+  representa corretamente o renderizador de um quadro por vez.
+
+- battle_controller_opponent:
+  Os dois redirecionamentos especiais da primeira batalha para o caminho de
+  dialogo do Oak foram desativados somente no PC. O caminho especial usava
+  fade, scanline e tilemap que nao eram reproduzidos corretamente e causavam
+  o glitch visual apos o rival retornar o Charmander.
+  No GBA o comportamento original continua preservado.
+
+- Itens:
+  Foram usados logs temporarios para confirmar a chave e a decodificacao de
+  itens. O problema de Potion com quantidades absurdas foi diagnosticado como
+  parte do caminho de dados/encriptacao e deixou de ser prioridade apos a
+  confirmacao de que o item novo era decodificado como 1.
+
+
+7. DIAGNOSTICOS UTILIZADOS
+--------------------------
+
+- PC_TRACE, PC_DEBUG, PC_DUMP, PC_HASH, PC_SAVE, PC_NORENDER,
+  PC_NOLOCKSTEP, PC_NET_PORT.
+- touch /tmp/pc_dump grava um dump de video e registradores no proximo quadro.
+- crash.c mostra o stack trace quando o jogo cai.
+- GDB foi usado para localizar:
+  - AgbRFU_softReset e chamadas RFU;
+  - corrupcao de heap na Union Room;
+  - queda em AllocInternal durante Task_InitUnionRoom;
+  - efeitos especiais da primeira batalha no caminho do Oak.
+
+
+8. COOP - PRIMEIRA IMPLEMENTACAO MVP
+------------------------------------
+
+Arquivos adicionados/alterados:
+
+- pc/shared.h
+  Adicionados coopKeyInput e coopConnected para a entrada do segundo jogador
+  e o estado da segunda conexao.
+
+- pc/net_bridge.c
+  A ponte TCP agora aceita dois visualizadores:
+  - primeiro cliente: jogador 1 e audio;
+  - segundo cliente: jogador 2;
+  - os dois recebem o mesmo quadro autoritativo do jogo;
+  - pacote 3 representa teclas do jogador 1;
+  - pacote 6 representa teclas do jogador 2;
+  - por compatibilidade, o servidor tambem aceita pacote 3 do segundo cliente.
+  A conexao do jogador 2 so fica ativa depois do primeiro pacote de entrada.
+
+- pc/viewer.c
+  PC_COOP_PLAYER=2 faz o segundo visualizador enviar pacote de entrada do
+  jogador 2. As duas janelas ainda mostram a mesma tela do jogo; camera
+  individual sera implementada em uma etapa posterior.
+
+- pc/coop.c
+  Novo modulo do MVP. Cria um avatar verde remoto no overworld, permite virar
+  e andar usando a entrada do segundo visualizador e remove/recria o avatar
+  durante desconexao ou troca de mapa.
+  O avatar ainda nao participa de colisao, scripts, itens, batalhas ou camera.
+
+- pc/pc_compat.h
+  Declaracao de PcCoopTick.
+
+- pc/patch_src.pl
+  O main patchado chama PcCoopTick durante o ciclo principal.
+
+- pc/build.sh
+  Inclui pc/coop.c na compilacao da camada PC.
+
+- pc/PROJETO.md
+  Plano e estado atual do coop documentados.
+
+
+9. COMO COMPILAR E TESTAR O COOP MVP
+-------------------------------------
+
+Terminal 1, no WSL:
+
+    cd ~/decomps/pokefirered
+    ./pc/build.sh
+    ./pc/run_windows.sh 2>&1 | tee ~/log_coop.txt
+
+Terminal 2, depois que a primeira janela abrir:
+
+    WINHOME=$(cmd.exe /c "echo %USERPROFILE%" | tr -d '\r')
+    DEST="$(wslpath "$WINHOME")/FireRedPC"
+    cd "$DEST"
+    PC_COOP_PLAYER=2 ./pc_viewer.exe 127.0.0.1:47474
+
+Resultado esperado:
+
+- O jogo abre normalmente antes do Continue.
+- O segundo jogador nao deve causar crash durante titulo ou carregamento.
+- Depois de entrar no mapa, aparece um avatar verde.
+- As setas da segunda janela movimentam o avatar remoto.
+- As duas janelas mostram o mesmo quadro do jogo nesta etapa.
+
+
+10. PROXIMAS ETAPAS DO COOP
+----------------------------
+
+1. Estabilizar a sessao: lobby, identificacao dos clientes, estado pronto,
+   timeout e desconexao limpa.
+2. Estado remoto autoritativo: mapa, coordenadas, direcao e estado de movimento.
+3. Camera e renderizacao separadas para cada jogador.
+4. Colisoes e sincronizacao de troca de mapa.
+5. Interacao com NPCs, itens e scripts.
+6. Batalhas cooperativas e compartilhamento de progresso.
+
+O MVP atual foi feito para validar a ponte e a entrada separada. Ele nao e
+ainda o sistema final de conexao.
