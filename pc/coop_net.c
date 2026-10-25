@@ -21,6 +21,7 @@
 
 #define PKT_HELLO 1
 #define PKT_STATE 2
+#define PKT_EVENT 3
 
 static pthread_mutex_t sLock = PTHREAD_MUTEX_INITIALIZER;
 static struct PcCoopPlayerState sLocal, sRemote;
@@ -28,6 +29,18 @@ static uint32_t sLocalVer;
 static volatile int sConnected;
 static int sStarted, sHostPort;
 static char sJoinHost[128], sJoinPort[16];
+
+#define PC_QSIZE 4096
+static struct PcCoopSyncEvent sOut[PC_QSIZE], sIn[PC_QSIZE];
+static unsigned sOutHead, sOutTail, sInHead, sInTail;
+static volatile int sNewConn;
+static int PopOut(struct PcCoopSyncEvent *e) {
+    int ok = 0;
+    pthread_mutex_lock(&sLock);
+    if (sOutHead != sOutTail) { *e = sOut[sOutTail % PC_QSIZE]; sOutTail++; ok = 1; }
+    pthread_mutex_unlock(&sLock);
+    return ok;
+}
 
 static long NowMs(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec * 1000L + ts.tv_nsec / 1000000L; }
 
@@ -46,13 +59,27 @@ static int SendState(int fd, const struct PcCoopPlayerState *s) {
     return SendAll(fd, m, sizeof m);
 }
 
+static int SendEvent(int fd, const struct PcCoopSyncEvent *e) {
+    uint8_t m[8];
+    m[0] = PKT_EVENT; m[1] = 5; m[2] = 0;
+    m[3] = e->kind; m[4] = (uint8_t)(e->index & 0xFF); m[5] = (uint8_t)(e->index >> 8); m[6] = (uint8_t)(e->value & 0xFF); m[7] = (uint8_t)(e->value >> 8);
+    return SendAll(fd, m, sizeof m);
+}
+
 static int HandlePacket(uint8_t type, const uint8_t *p, int len) {
-    if (type == PKT_HELLO) { if (len != 4 || memcmp(p, "FRC1", 4) != 0) return 0; sConnected = 1; return 1; }
+    if (type == PKT_HELLO) { if (len != 4 || memcmp(p, "FRC1", 4) != 0) return 0; sConnected = 1; sNewConn = 1; return 1; }
     if (type == PKT_STATE && len == 10) {
         struct PcCoopPlayerState s; memset(&s, 0, sizeof s);
         s.mapGroup = p[0]; s.mapNum = p[1]; s.facing = p[2]; s.gfx = p[3]; s.elevation = p[4];
         s.x = (int16_t)(p[6] | (p[7] << 8)); s.y = (int16_t)(p[8] | (p[9] << 8)); s.valid = 1;
         pthread_mutex_lock(&sLock); sRemote = s; pthread_mutex_unlock(&sLock);
+    }
+    if (type == PKT_EVENT && len == 5) {
+        struct PcCoopSyncEvent ev;
+        ev.kind = p[0]; ev.index = (uint16_t)(p[1] | (p[2] << 8)); ev.value = (uint16_t)(p[3] | (p[4] << 8));
+        pthread_mutex_lock(&sLock);
+        if (sInHead - sInTail < PC_QSIZE) sIn[sInHead++ % PC_QSIZE] = ev;
+        pthread_mutex_unlock(&sLock);
     }
     return 1;
 }
@@ -83,6 +110,7 @@ static void Session(int fd) {
             struct PcCoopPlayerState l; uint32_t ver; long now = NowMs();
             pthread_mutex_lock(&sLock); l = sLocal; ver = sLocalVer; pthread_mutex_unlock(&sLock);
             if (l.valid && (ver != lastVer || now - lastSend > 1000)) { if (!SendState(fd, &l)) return; lastVer = ver; lastSend = now; }
+            { struct PcCoopSyncEvent ev; while (PopOut(&ev)) if (!SendEvent(fd, &ev)) return; }
         }
     }
 }
@@ -123,7 +151,7 @@ static void *NetThread(void *arg) {
         Session(fd);
         close(fd);
         sConnected = 0;
-        pthread_mutex_lock(&sLock); memset(&sRemote, 0, sizeof sRemote); pthread_mutex_unlock(&sLock);
+        pthread_mutex_lock(&sLock); memset(&sRemote, 0, sizeof sRemote); sOutHead = sOutTail = 0; pthread_mutex_unlock(&sLock);
         fprintf(stderr, "[pc] coop: desconectado\n");
         if (ls < 0) sleep(1);
     }
@@ -145,6 +173,7 @@ void PcCoopNetStart(void) {
         snprintf(sJoinPort, sizeof sJoinPort, "%s", colon ? colon + 1 : "47500");
     }
     sStarted = 1;
+    fprintf(stderr, "[pc] coop: ativo como %s\n", h ? "HOST" : "CONVIDADO");
     if (pthread_create(&th, NULL, NetThread, NULL) == 0) pthread_detach(th);
 }
 
@@ -158,3 +187,17 @@ int PcCoopNetGetRemote(struct PcCoopPlayerState *out) {
     pthread_mutex_lock(&sLock); *out = sRemote; ok = sConnected && sRemote.valid; pthread_mutex_unlock(&sLock);
     return ok;
 }
+
+void PcCoopNetSendEvent(const struct PcCoopSyncEvent *e) {
+    pthread_mutex_lock(&sLock);
+    if (sConnected && sOutHead - sOutTail < PC_QSIZE) sOut[sOutHead++ % PC_QSIZE] = *e;
+    pthread_mutex_unlock(&sLock);
+}
+int PcCoopNetPollEvent(struct PcCoopSyncEvent *e) {
+    int ok = 0;
+    pthread_mutex_lock(&sLock);
+    if (sInHead != sInTail) { *e = sIn[sInTail % PC_QSIZE]; sInTail++; ok = 1; }
+    pthread_mutex_unlock(&sLock);
+    return ok;
+}
+int PcCoopNetJustConnected(void) { int r = sNewConn; if (r) sNewConn = 0; return r; }

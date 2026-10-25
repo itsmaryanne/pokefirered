@@ -29,6 +29,8 @@ void PcRenderFrame(uint32_t *out);
 uint32_t gPcFrame[240 * 160];
 static struct PcShared *sShared;
 struct PcShared *PcGetShared(void) { return sShared; }
+volatile int gPcSpectating;                         /* 1 = mostrando a tela do outro jogador (coop) */
+void PcSpectatePutFrame(const uint32_t *argb) { if (sShared) memcpy(sShared->frame, argb, sizeof gPcFrame); }
 void PcNetStart(struct PcShared *sh);
 static int sStall;
 volatile int gPcInVBlankWait; // 1 enquanto o jogo espera o V-blank pela BIOS (VBlankIntrWait)

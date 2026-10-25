@@ -7,6 +7,7 @@
 #include "pc_compat.h"
 void AgbMain(void);
 void PcStartTiming(void);
+void PcCoopNetStart(void);
 void PcMemInit(void) {
     static const struct { uintptr_t a; size_t s; const char *n; } r[] = {
         {0x02000000,0x40000,"EWRAM"},{0x03000000,0x8000,"IWRAM"},{0x04000000,0x1000,"IO"},
@@ -22,7 +23,7 @@ void PcMemInit(void) {
 }
 char **gPcArgv;                                       // usado pelo SoftReset (reinicia o processo)
 void PcInstallCrashHandlers(void);
-int main(int argc, char **argv) { (void)argc; gPcArgv = argv; fprintf(stderr, "[pc] build de %s %s\n", __DATE__, __TIME__); PcInstallCrashHandlers(); PcMemInit(); PcStartTiming(); AgbMain(); return 0; }
+int main(int argc, char **argv) { (void)argc; gPcArgv = argv; fprintf(stderr, "[pc] build de %s %s\n", __DATE__, __TIME__); PcInstallCrashHandlers(); PcMemInit(); PcStartTiming(); PcCoopNetStart(); AgbMain(); return 0; }
 
 // ---- Símbolos que no GBA vinham do linker script / cabeçalho da ROM / libgcnmultiboot ----
 unsigned char gHeap[0x1C000];                         // HEAP_SIZE do jogo

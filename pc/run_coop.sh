@@ -10,13 +10,13 @@ WINHOME=$(cmd.exe /c "echo %USERPROFILE%" 2>/dev/null | tr -d '\r')
 DEST="$(wslpath "$WINHOME")/FireRedPC"
 [ -f "$DEST/pc_viewer.exe" ] || { echo "pc_viewer.exe nao esta em $DEST (rode ./pc/run_windows.sh uma vez)"; exit 1; }
 pkill -x pokefirered_pc 2>/dev/null; sleep 0.5
-cp -n pokefirered.sav guest.sav
+cp --update=none pokefirered.sav guest.sav
 trap 'trap - EXIT INT TERM; kill 0 2>/dev/null' EXIT INT TERM
 PC_COOP_HOST=47500 PC_NET_PORT=47474 ./build_pc/pokefirered_pc > ~/host.log 2>&1 &
 sleep 1
 PC_SAVE=guest.sav PC_COOP_JOIN=127.0.0.1:47500 PC_NET_PORT=47475 ./build_pc/pokefirered_pc > ~/guest.log 2>&1 &
 sleep 1
-( tail -n0 -F ~/host.log  | grep --line-buffered "coop\|FATAL" | sed -u 's/^/[HOST]  /' ) &
-( tail -n0 -F ~/guest.log | grep --line-buffered "coop\|FATAL" | sed -u 's/^/[GUEST] /' ) &
+( tail -n +1 -F ~/host.log  | grep --line-buffered "coop\|FATAL" | sed -u 's/^/\r[HOST]  /' ) &
+( tail -n +1 -F ~/guest.log | grep --line-buffered "coop\|FATAL" | sed -u 's/^/\r[GUEST] /' ) &
 echo "Abrindo as janelas. M muda o som de uma delas. Ctrl+C aqui encerra os dois jogos."
 ( cd "$DEST" && ./pc_viewer.exe 127.0.0.1:47474 & ( cd "$DEST" && ./pc_viewer.exe 127.0.0.1:47475 ) & wait )
