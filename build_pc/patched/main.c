@@ -172,6 +172,7 @@ void AgbMain()
         {
             gLinkTransferringData = TRUE;
             UpdateLinkAndCallCallbacks();
+    PcCoopLinkTick();
     PcCoopTick();
             gLinkTransferringData = FALSE;
         }
@@ -179,6 +180,7 @@ void AgbMain()
         {
             gLinkTransferringData = FALSE;
             UpdateLinkAndCallCallbacks();
+    PcCoopLinkTick();
     PcCoopTick();
 
             if (Overworld_RecvKeysFromLinkIsRunning() == 1)
@@ -187,6 +189,7 @@ void AgbMain()
                 ClearSpriteCopyRequests();
                 gLinkTransferringData = TRUE;
                 UpdateLinkAndCallCallbacks();
+    PcCoopLinkTick();
     PcCoopTick();
                 gLinkTransferringData = FALSE;
             }

@@ -60,10 +60,45 @@ static int SendState(int fd, const struct PcCoopPlayerState *s) {
 }
 
 static int SendEvent(int fd, const struct PcCoopSyncEvent *e) {
-    uint8_t m[8];
-    m[0] = PKT_EVENT; m[1] = 5; m[2] = 0;
+    uint8_t m[12];
+    m[0] = PKT_EVENT; m[1] = 9; m[2] = 0;
     m[3] = e->kind; m[4] = (uint8_t)(e->index & 0xFF); m[5] = (uint8_t)(e->index >> 8); m[6] = (uint8_t)(e->value & 0xFF); m[7] = (uint8_t)(e->value >> 8);
+    m[8] = (uint8_t)(e->a & 0xFF); m[9] = (uint8_t)(e->a >> 8); m[10] = (uint8_t)(e->b & 0xFF); m[11] = (uint8_t)(e->b >> 8);
     return SendAll(fd, m, sizeof m);
+}
+
+/* ---------- cabo link virtual ---------- */
+#define PKT_LINK 7
+#define PC_LINK_SLOTS 64
+#define PC_LINK_MAX 4096
+struct PcLinkSlot { uint8_t kind, sender; uint16_t size; uint8_t data[PC_LINK_MAX]; };
+static struct PcLinkSlot sLinkOut[PC_LINK_SLOTS], sLinkIn[PC_LINK_SLOTS];
+static unsigned sLinkOutHead, sLinkOutTail, sLinkInHead, sLinkInTail;
+static int sLinkPending;
+static int sMyLinkId = 1;
+
+static int LinkIsHost(void) { return getenv("PC_COOP_HOST") != NULL; }
+
+/* chamar com sLock */
+static int LinkPush(struct PcLinkSlot *q, unsigned *head, unsigned *tail, uint8_t kind, uint8_t sender, const void *data, unsigned size) {
+    struct PcLinkSlot *s;
+    if (size > PC_LINK_MAX || *head - *tail >= PC_LINK_SLOTS) { fprintf(stderr, "[pc] link: fila cheia ou bloco grande demais (%u bytes)\n", size); return 0; }
+    s = &q[*head % PC_LINK_SLOTS];
+    s->kind = kind; s->sender = sender; s->size = (uint16_t)size; memcpy(s->data, data, size);
+    (*head)++;
+    return 1;
+}
+
+static int LinkPopOut(uint8_t *kind, uint8_t *sender, uint8_t *buf, unsigned *size) {
+    int ok = 0;
+    pthread_mutex_lock(&sLock);
+    if (sLinkOutHead != sLinkOutTail) {
+        struct PcLinkSlot *s = &sLinkOut[sLinkOutTail % PC_LINK_SLOTS];
+        *kind = s->kind; *sender = s->sender; *size = s->size; memcpy(buf, s->data, s->size);
+        sLinkOutTail++; ok = 1;
+    }
+    pthread_mutex_unlock(&sLock);
+    return ok;
 }
 
 static int HandlePacket(uint8_t type, const uint8_t *p, int len) {
@@ -74,9 +109,25 @@ static int HandlePacket(uint8_t type, const uint8_t *p, int len) {
         s.x = (int16_t)(p[6] | (p[7] << 8)); s.y = (int16_t)(p[8] | (p[9] << 8)); s.valid = 1;
         pthread_mutex_lock(&sLock); sRemote = s; pthread_mutex_unlock(&sLock);
     }
-    if (type == PKT_EVENT && len == 5) {
+    if (type == PKT_LINK && len >= 2 && len - 2 <= PC_LINK_MAX) {
+        uint8_t kind = p[0], sender = p[1];
+        unsigned size = (unsigned)(len - 2);
+        pthread_mutex_lock(&sLock);
+        if (kind == 0) {                      /* SUBMIT (convidado -> host): o host numera, entrega a si e redistribui */
+            if (LinkIsHost()) {
+                LinkPush(sLinkIn, &sLinkInHead, &sLinkInTail, 1, sender, p + 2, size);
+                LinkPush(sLinkOut, &sLinkOutHead, &sLinkOutTail, 1, sender, p + 2, size);
+            }
+        } else if (kind == 1) {               /* DELIVER (host -> convidado): mesma ordem do host */
+            LinkPush(sLinkIn, &sLinkInHead, &sLinkInTail, 1, sender, p + 2, size);
+            if (sender == sMyLinkId && sLinkPending > 0) sLinkPending--;   /* o eco do nosso próprio bloco */
+        }
+        pthread_mutex_unlock(&sLock);
+        return 1;
+    }
+    if (type == PKT_EVENT && len == 9) {
         struct PcCoopSyncEvent ev;
-        ev.kind = p[0]; ev.index = (uint16_t)(p[1] | (p[2] << 8)); ev.value = (uint16_t)(p[3] | (p[4] << 8));
+        ev.kind = p[0]; ev.index = (uint16_t)(p[1] | (p[2] << 8)); ev.value = (uint16_t)(p[3] | (p[4] << 8)); ev.a = (uint16_t)(p[5] | (p[6] << 8)); ev.b = (uint16_t)(p[7] | (p[8] << 8));
         pthread_mutex_lock(&sLock);
         if (sInHead - sInTail < PC_QSIZE) sIn[sInHead++ % PC_QSIZE] = ev;
         pthread_mutex_unlock(&sLock);
@@ -85,7 +136,7 @@ static int HandlePacket(uint8_t type, const uint8_t *p, int len) {
 }
 
 static void Session(int fd) {
-    uint8_t rbuf[512]; int rn = 0, one = 1; long lastSend = 0; uint32_t lastVer = 0xFFFFFFFFu;
+    static uint8_t rbuf[70000]; int rn = 0, one = 1; long lastSend = 0; uint32_t lastVer = 0xFFFFFFFFu;
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
     if (!SendHello(fd)) return;
     for (;;) {
@@ -99,7 +150,7 @@ static void Session(int fd) {
                 rn += (int)k;
                 while (rn >= 3) {
                     int len = rbuf[1] | (rbuf[2] << 8);
-                    if (len > 200) return;
+                    if (len > 60000) return;
                     if (rn < 3 + len) break;
                     if (!HandlePacket(rbuf[0], rbuf + 3, len)) return;
                     memmove(rbuf, rbuf + 3 + len, (size_t)(rn - 3 - len)); rn -= 3 + len;
@@ -111,6 +162,19 @@ static void Session(int fd) {
             pthread_mutex_lock(&sLock); l = sLocal; ver = sLocalVer; pthread_mutex_unlock(&sLock);
             if (l.valid && (ver != lastVer || now - lastSend > 1000)) { if (!SendState(fd, &l)) return; lastVer = ver; lastSend = now; }
             { struct PcCoopSyncEvent ev; while (PopOut(&ev)) if (!SendEvent(fd, &ev)) return; }
+            { uint8_t lk, ls; unsigned lsz; static uint8_t lb[PC_LINK_MAX], lpk[5 + PC_LINK_MAX];
+              while (LinkPopOut(&lk, &ls, lb, &lsz)) {
+                  lpk[0] = PKT_LINK; lpk[1] = (uint8_t)((lsz + 2) & 0xFF); lpk[2] = (uint8_t)((lsz + 2) >> 8); lpk[3] = lk; lpk[4] = ls;
+                  memcpy(lpk + 5, lb, lsz);
+                  if (!SendAll(fd, lpk, 5 + lsz)) return;
+              } }
+            { static int test = -1; static long t0; static unsigned n, seq; uint8_t snd; static uint8_t tb[PC_LINK_MAX]; unsigned tsz;
+              if (test < 0) test = getenv("PC_LINK_TEST") != NULL;
+              if (test) {
+                  long nw = NowMs();
+                  if (nw - t0 > 2000) { char msg[40]; t0 = nw; n++; snprintf(msg, sizeof msg, "PING %u de %s", n, LinkIsHost() ? "host" : "convidado"); PcLinkSubmit(msg, (unsigned)strlen(msg) + 1); }
+                  while (PcLinkPopDelivered(&snd, tb, &tsz)) fprintf(stderr, "[pc] link-test #%u: do jogador %d: %s\n", ++seq, snd, (char *)tb);
+              } }
         }
     }
 }
@@ -151,7 +215,7 @@ static void *NetThread(void *arg) {
         Session(fd);
         close(fd);
         sConnected = 0;
-        pthread_mutex_lock(&sLock); memset(&sRemote, 0, sizeof sRemote); sOutHead = sOutTail = 0; pthread_mutex_unlock(&sLock);
+        pthread_mutex_lock(&sLock); memset(&sRemote, 0, sizeof sRemote); sOutHead = sOutTail = 0; sLinkOutHead = sLinkOutTail = sLinkInHead = sLinkInTail = 0; sLinkPending = 0; pthread_mutex_unlock(&sLock);
         fprintf(stderr, "[pc] coop: desconectado\n");
         if (ls < 0) sleep(1);
     }
@@ -201,3 +265,44 @@ int PcCoopNetPollEvent(struct PcCoopSyncEvent *e) {
     return ok;
 }
 int PcCoopNetJustConnected(void) { int r = sNewConn; if (r) sNewConn = 0; return r; }
+
+int PcLinkAvailable(void) { return PcCoopNetActive(); }
+int PcLinkIsHost(void) { return LinkIsHost(); }
+int PcLinkConnected(void) { return sConnected; }
+int PcLinkSubmit(const void *data, unsigned size) {
+    int ok;
+    pthread_mutex_lock(&sLock);
+    if (!sConnected) ok = 0;
+    else if (LinkIsHost()) {                  /* host: numera na hora; entrega a si mesmo e manda ao convidado */
+        ok = LinkPush(sLinkIn, &sLinkInHead, &sLinkInTail, 1, 0, data, size)
+          && LinkPush(sLinkOut, &sLinkOutHead, &sLinkOutTail, 1, 0, data, size);
+    } else {                                  /* convidado: manda ao host e espera o eco */
+        ok = LinkPush(sLinkOut, &sLinkOutHead, &sLinkOutTail, 0, (uint8_t)sMyLinkId, data, size);
+        if (ok) sLinkPending++;
+    }
+    pthread_mutex_unlock(&sLock);
+    return ok;
+}
+int PcLinkPopDelivered(uint8_t *sender, void *buf, unsigned *size) {
+    int ok = 0;
+    pthread_mutex_lock(&sLock);
+    if (sLinkInHead != sLinkInTail) {
+        struct PcLinkSlot *s = &sLinkIn[sLinkInTail % PC_LINK_SLOTS];
+        *sender = s->sender; *size = s->size; memcpy(buf, s->data, s->size);
+        sLinkInTail++; ok = 1;
+    }
+    pthread_mutex_unlock(&sLock);
+    return ok;
+}
+int PcLinkSubmitPending(void) { int n; pthread_mutex_lock(&sLock); n = sLinkPending; pthread_mutex_unlock(&sLock); return n; }
+
+void PcLinkSetMyId(int id) { sMyLinkId = id; }
+int PcLinkSubmitAs(int sender, const void *data, unsigned size) {
+    int ok = 0;
+    pthread_mutex_lock(&sLock);
+    if (sConnected && LinkIsHost())
+        ok = LinkPush(sLinkIn, &sLinkInHead, &sLinkInTail, 1, (uint8_t)sender, data, size)
+          && LinkPush(sLinkOut, &sLinkOutHead, &sLinkOutTail, 1, (uint8_t)sender, data, size);
+    pthread_mutex_unlock(&sLock);
+    return ok;
+}

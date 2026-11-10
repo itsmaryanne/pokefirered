@@ -1,0 +1,9 @@
+PcCoopBuildTrainerSlots
+PcCoopCanLink
+PcCoopLinkTick
+PcCoopStartCoopTrainerBattle
+PcCoopStartVirtualBattle
+PcCoopTick
+PcCoopTrainerMayEngage
+PcCoopTrainerMode
+PcCoopTrainerName

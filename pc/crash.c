@@ -31,6 +31,15 @@ static void OnCrash(int sig, siginfo_t *si, void *ctx) {
     backtrace_symbols_fd(bt, n, 2);
     Resolve(bt, n);
     fprintf(stderr, "[pc] se os nomes não aparecerem: addr2line -f -e build_pc/pokefirered_pc 0x%08lx\n", eip);
+#ifdef REG_ESP
+    if (eip < 0x10000) {            /* salto por ponteiro nulo: o endereço de retorno está no topo da pilha */
+        unsigned *sp = (unsigned *)(unsigned long)((ucontext_t *)ctx)->uc_mcontext.gregs[REG_ESP];
+        void *cand[24]; int m = 0, i;
+        for (i = 0; i < 96 && m < 24; i++) if (sp[i] >= 0x08048000u && sp[i] < 0x08400000u) cand[m++] = (void *)(unsigned long)sp[i];
+        fprintf(stderr, "[pc] salto por ponteiro nulo; enderecos de codigo no topo da pilha (o 1o costuma ser quem chamou):\n");
+        Resolve(cand, m);
+    }
+#endif
     _exit(128 + sig);
 }
 

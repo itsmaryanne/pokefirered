@@ -1,0 +1,24 @@
+/usr/bin/x86_64-linux-gnu-ld.bfd: build_pc/battle_controller_link_opponent.o: in function `LinkOpponentHandleDrawTrainerPic':
+<stdin>:(.text+0x1191): undefined reference to `PcCoopTrainerMode'
+/usr/bin/x86_64-linux-gnu-ld.bfd: build_pc/battle_controllers.o: in function `InitBattleControllers':
+<stdin>:(.text+0x984): undefined reference to `PcCoopTrainerMode'
+/usr/bin/x86_64-linux-gnu-ld.bfd: build_pc/link.o: in function `PcVLSend':
+<stdin>:(.text+0x2585): undefined reference to `PcCoopBuildTrainerSlots'
+/usr/bin/x86_64-linux-gnu-ld.bfd: build_pc/link.o: in function `PcVLPoll':
+<stdin>:(.text+0x324d): undefined reference to `PcCoopCanLink'
+/usr/bin/x86_64-linux-gnu-ld.bfd: <stdin>:(.text+0x3344): undefined reference to `PcCoopCanLink'
+/usr/bin/x86_64-linux-gnu-ld.bfd: <stdin>:(.text+0x3487): undefined reference to `PcCoopStartVirtualBattle'
+/usr/bin/x86_64-linux-gnu-ld.bfd: <stdin>:(.text+0x3543): undefined reference to `PcCoopTrainerName'
+/usr/bin/x86_64-linux-gnu-ld.bfd: <stdin>:(.text+0x35a4): undefined reference to `PcCoopStartCoopTrainerBattle'
+/usr/bin/x86_64-linux-gnu-ld.bfd: build_pc/main.o: in function `AgbMain':
+<stdin>:(.text+0x61c): undefined reference to `PcCoopLinkTick'
+/usr/bin/x86_64-linux-gnu-ld.bfd: <stdin>:(.text+0x621): undefined reference to `PcCoopTick'
+/usr/bin/x86_64-linux-gnu-ld.bfd: <stdin>:(.text+0x721): undefined reference to `PcCoopLinkTick'
+/usr/bin/x86_64-linux-gnu-ld.bfd: <stdin>:(.text+0x726): undefined reference to `PcCoopTick'
+/usr/bin/x86_64-linux-gnu-ld.bfd: <stdin>:(.text+0x753): undefined reference to `PcCoopLinkTick'
+/usr/bin/x86_64-linux-gnu-ld.bfd: <stdin>:(.text+0x758): undefined reference to `PcCoopTick'
+/usr/bin/x86_64-linux-gnu-ld.bfd: build_pc/overworld.o: in function `OverworldBasic':
+<stdin>:(.text+0x5e2): undefined reference to `PcCoopTick'
+/usr/bin/x86_64-linux-gnu-ld.bfd: build_pc/trainer_see.o: in function `CheckForTrainersWantingBattle':
+<stdin>:(.text+0xcfa): undefined reference to `PcCoopTrainerMayEngage'
+collect2: error: ld returned 1 exit status

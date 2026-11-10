@@ -1,0 +1,43 @@
+pc/coop.c:654:5: error: redefinition of ‘PcCoopTrainerMode’
+  654 | int PcCoopTrainerMode(void)
+      |     ^~~~~~~~~~~~~~~~~
+pc/coop.c:549:5: note: previous definition of ‘PcCoopTrainerMode’ with type ‘int(void)’
+  549 | int PcCoopTrainerMode(void)
+      |     ^~~~~~~~~~~~~~~~~
+pc/coop.c:659:6: error: redefinition of ‘PcCoopTrainerName’
+  659 | void PcCoopTrainerName(unsigned trainerId, void *dst, unsigned len)
+      |      ^~~~~~~~~~~~~~~~~
+pc/coop.c:554:6: note: previous definition of ‘PcCoopTrainerName’ with type ‘void(unsigned int,  void *, unsigned int)’
+  554 | void PcCoopTrainerName(unsigned trainerId, void *dst, unsigned len)
+      |      ^~~~~~~~~~~~~~~~~
+pc/coop.c:671:5: error: redefinition of ‘PcCoopBuildTrainerSlots’
+  671 | int PcCoopBuildTrainerSlots(unsigned trainerId, void *out, unsigned outSize)
+      |     ^~~~~~~~~~~~~~~~~~~~~~~
+pc/coop.c:566:5: note: previous definition of ‘PcCoopBuildTrainerSlots’ with type ‘int(unsigned int,  void *, unsigned int)’
+  566 | int PcCoopBuildTrainerSlots(unsigned trainerId, void *out, unsigned outSize)
+      |     ^~~~~~~~~~~~~~~~~~~~~~~
+pc/coop.c:689:17: error: redefinition of ‘PcCoopPickTrainer’
+  689 | static unsigned PcCoopPickTrainer(void)
+      |                 ^~~~~~~~~~~~~~~~~
+pc/coop.c:584:17: note: previous definition of ‘PcCoopPickTrainer’ with type ‘unsigned int(void)’
+  584 | static unsigned PcCoopPickTrainer(void)
+      |                 ^~~~~~~~~~~~~~~~~
+pc/coop.c:702:13: error: redefinition of ‘CB2_ReturnFromCoopTrainerBattle’
+  702 | static void CB2_ReturnFromCoopTrainerBattle(void)
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+pc/coop.c:597:13: note: previous definition of ‘CB2_ReturnFromCoopTrainerBattle’ with type ‘void(void)’
+  597 | static void CB2_ReturnFromCoopTrainerBattle(void)
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+pc/coop.c:710:6: error: redefinition of ‘PcCoopStartCoopTrainerBattle’
+  710 | void PcCoopStartCoopTrainerBattle(unsigned trainerId)
+      |      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+pc/coop.c:605:6: note: previous definition of ‘PcCoopStartCoopTrainerBattle’ with type ‘void(unsigned int)’
+  605 | void PcCoopStartCoopTrainerBattle(unsigned trainerId)
+      |      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+pc/coop.c:721:13: error: redefinition of ‘PcCoopTrainerTriggerCheck’
+  721 | static void PcCoopTrainerTriggerCheck(void)
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~
+pc/coop.c:616:13: note: previous definition of ‘PcCoopTrainerTriggerCheck’ with type ‘void(void)’
+  616 | static void PcCoopTrainerTriggerCheck(void)
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~
+pc/coop.c:616:13: warning: ‘PcCoopTrainerTriggerCheck’ defined but not used [-Wunused-function]

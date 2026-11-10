@@ -2,7 +2,7 @@
 # Compila um arquivo C do pokefirered para x86 32 bits: cpp -> preproc (textos GBA) -> gcc -m32
 # Arquivos com asm ARM inline passam antes por pc/patch_src.pl (em cópia; o original não muda).
 f="$1"; b=$(basename "$f" .c)
-case " script m4a main main_menu union_room dma3_manager battle_controller_opponent librfu_intr multiboot bg gpu_regs naming_screen trainer_card librfu_stwi librfu_rfu overworld " in
+case " script m4a main main_menu union_room dma3_manager battle_controller_opponent librfu_intr multiboot bg gpu_regs naming_screen trainer_card librfu_stwi librfu_rfu overworld trainer_see link battle_controllers battle_controller_link_opponent " in
   *" $b "*) mkdir -p build_pc/patched; perl pc/patch_src.pl "$b" < "$f" > build_pc/patched/$b.c; src=build_pc/patched/$b.c ;;
   *) src="$f" ;;
 esac
