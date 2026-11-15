@@ -7,12 +7,13 @@
 #include "event_object_movement.h"
 #include "field_player_avatar.h"
 #include "constants/songs.h"
+#include "constants/event_object_movement.h"
 
 // Conecta sozinho ao entrar no overworld (sem atalho de teclas).
 // Mude para 0 para jogar normalmente, sem tentar abrir o link.
 #define COOP_AUTOSTART 1
-#define COOP_AUTOSTART_DELAY 120   // frames de espera depois que o overworld comeca
-#define COOP_RETRY_DELAY 300       // frames extras de espera depois de uma tentativa que falhou
+#define COOP_AUTOSTART_DELAY 120 // frames de espera depois que o overworld comeca
+#define COOP_RETRY_DELAY 300     // frames extras de espera depois de uma tentativa que falhou
 
 // Quantos consoles esperamos para a conexao (por enquanto so 2).
 #define COOP_PLAYERS_WANTED 2
@@ -20,10 +21,13 @@
 // Tempo maximo de cada tentativa de conexao, em frames (~25 s).
 #define COOP_CONNECT_TIMEOUT 1500
 
-// Toca um "pin" quando o OUTRO jogador da um passo (teste sem avatares).
-#define COOP_DEBUG_SOUND 1
+// LocalId dos avatares remotos no mapa (200 a 203).
+#define COOP_LOCAL_ID_BASE 200
 
-// Escreve mensagens no log do mGBA (Tools > View logs).
+// Toca um "pin" quando o OUTRO jogador da um passo.
+#define COOP_DEBUG_SOUND 0
+
+// Escreve mensagens no log do mGBA (so eventos principais).
 #define COOP_DEBUG_LOG 1
 
 enum
@@ -33,26 +37,23 @@ enum
     COOP_ACTIVE,
 };
 
-#define tState    data[0]
-#define tTimer    data[1]
-#define tStable   data[2]
-#define tWait     data[3]
-#define tSentReq  data[4]
+#define tState data[0]
+#define tTimer data[1]
+#define tStable data[2]
+#define tWait data[3]
+#define tSentReq data[4]
 
 extern void BuildSendCmd(u16 command);
 
 EWRAM_DATA struct CoopRemotePlayer gCoopRemote[MAX_LINK_PLAYERS] = {};
 static EWRAM_DATA u8 sCoopState = COOP_IDLE;
 static EWRAM_DATA s16 sAutoDelay = 0;
-static EWRAM_DATA u16 sActiveTimer = 0;
 
 static void Task_CoopConnect(u8 taskId);
 static void Coop_CancelConnect(u8 taskId);
 
 #if COOP_DEBUG_LOG
-// Protocolo de depuracao do mGBA: habilita escrevendo 0xC0DE em 0x04FFF780,
-// escreve o texto em 0x04FFF600 e envia com (nivel | 0x100) em 0x04FFF700.
-// Em outros emuladores ou no hardware, nada acontece.
+// Protocolo de depuracao do mGBA (nivel Aviso).
 static void Coop_Log(const char *label, u32 value)
 {
     vu8 *out = (vu8 *)0x04FFF600;
@@ -111,8 +112,7 @@ void Coop_OnPosCmd(u8 playerId, const u16 *in)
         Coop_Log("first-pkt-from", playerId);
 
 #if COOP_DEBUG_SOUND
-    if (playerId != GetMultiplayerId()
-     && (remote->x != (s16)in[0] || remote->y != (s16)in[1]))
+    if (playerId != GetMultiplayerId() && (remote->x != (s16)in[0] || remote->y != (s16)in[1]))
         PlaySE(SE_PIN);
 #endif
 
@@ -126,12 +126,94 @@ void Coop_OnPosCmd(u8 playerId, const u16 *in)
     remote->packetCount++;
 }
 
+// Cria/atualiza o avatar do jogador remoto "id" no mapa atual.
+static void Coop_UpdateAvatar(u8 id)
+{
+    struct CoopRemotePlayer *remote = &gCoopRemote[id];
+    u8 localId = COOP_LOCAL_ID_BASE + id;
+    u8 mapGroup = gSaveBlock1Ptr->location.mapGroup;
+    u8 mapNum = gSaveBlock1Ptr->location.mapNum;
+    u8 objId;
+    struct ObjectEvent *obj;
+    s16 dx;
+    s16 dy;
+    u8 dir;
+
+    if (id == GetMultiplayerId() || remote->packetCount == 0)
+        return;
+
+    objId = GetObjectEventIdByLocalIdAndMap(localId, mapNum, mapGroup);
+
+    // Jogador remoto em outro mapa: sem avatar aqui.
+    if (remote->mapGroup != mapGroup || remote->mapNum != mapNum)
+    {
+        if (objId < OBJECT_EVENTS_COUNT)
+            RemoveObjectEventByLocalIdAndMap(localId, mapNum, mapGroup);
+        return;
+    }
+
+    // Cria o avatar se ainda nao existe neste mapa.
+    if (objId >= OBJECT_EVENTS_COUNT)
+    {
+        objId = SpawnSpecialObjectEventParameterized(
+            GetRivalAvatarGraphicsIdByStateIdAndGender(PLAYER_AVATAR_STATE_NORMAL, gLinkPlayers[id].gender),
+            MOVEMENT_TYPE_NONE,
+            localId,
+            remote->x,
+            remote->y,
+            remote->elevation);
+        if (objId >= OBJECT_EVENTS_COUNT)
+            return;
+    }
+
+    obj = &gObjectEvents[objId];
+
+    // Ainda terminando um movimento: espera.
+    if (ObjectEventClearHeldMovementIfFinished(obj) == 0)
+        return;
+
+    dx = remote->x - obj->currentCoords.x;
+    dy = remote->y - obj->currentCoords.y;
+
+    if (dx == 0 && dy == 0)
+    {
+        // Parado no lugar certo: so ajusta para onde esta olhando.
+        if (obj->facingDirection != remote->facing)
+            ObjectEventSetHeldMovement(obj, GetFaceDirectionMovementAction(remote->facing));
+    }
+    else if ((dx == 0 && (dy == 1 || dy == -1)) || (dy == 0 && (dx == 1 || dx == -1)))
+    {
+        // Um tile de distancia: anda (ou corre) ate la.
+        if (dx > 0)
+            dir = DIR_EAST;
+        else if (dx < 0)
+            dir = DIR_WEST;
+        else if (dy > 0)
+            dir = DIR_SOUTH;
+        else
+            dir = DIR_NORTH;
+
+        if (remote->avatarFlags & PLAYER_AVATAR_FLAG_DASH)
+            ObjectEventSetHeldMovement(obj, GetWalkFastMovementAction(dir));
+        else
+            ObjectEventSetHeldMovement(obj, GetWalkNormalMovementAction(dir));
+    }
+    else
+    {
+        // Longe demais (spawn, warp, atraso): teletransporta.
+        MoveObjectEventToMapCoords(obj, remote->x, remote->y);
+    }
+}
+
 // Chamado todo frame pelo OverworldBasic.
 // Parado: espera um pouco e comeca a conectar sozinho.
 // Ativo: religa o envio de posicao quando o link fica ocioso
-// (o SendBlock e o standby terminam com gLinkCallback = NULL).
+// (o SendBlock e o standby terminam com gLinkCallback = NULL)
+// e atualiza os avatares dos outros jogadores.
 void Coop_OverworldTick(void)
 {
+    u8 i;
+
     switch (sCoopState)
     {
     case COOP_IDLE:
@@ -147,12 +229,8 @@ void Coop_OverworldTick(void)
     case COOP_ACTIVE:
         if (IsLinkTaskFinished())
             StartSendingCoopPos();
-        if (++sActiveTimer >= 180)
-        {
-            sActiveTimer = 0;
-            Coop_Log("pkts-p0", gCoopRemote[0].packetCount);
-            Coop_Log("pkts-p1", gCoopRemote[1].packetCount);
-        }
+        for (i = 0; i < MAX_LINK_PLAYERS; i++)
+            Coop_UpdateAvatar(i);
         break;
     }
 }
@@ -181,8 +259,6 @@ static void Task_CoopConnect(u8 taskId)
         tState = 1;
         break;
     case 1: // espera os consoles se enxergarem
-        if (tTimer % 90 == 0)
-            Coop_Log("wait-cnt", GetLinkPlayerCount_2());
         if (tTimer > 10 && GetLinkPlayerCount_2() >= COOP_PLAYERS_WANTED)
         {
             Coop_Log("found-cnt", GetLinkPlayerCount_2());
@@ -213,14 +289,11 @@ static void Task_CoopConnect(u8 taskId)
             Coop_Log("connected-id-cnt", (GetMultiplayerId() << 8) | GetLinkPlayerCount_2());
             StartSendingCoopPos();
             sCoopState = COOP_ACTIVE;
-            sActiveTimer = 0;
             PlaySE(SE_PIN);
             DestroyTask(taskId);
             break;
         }
         tWait++;
-        if (tWait % 90 == 0)
-            Coop_Log("wait-recv", gReceivedRemoteLinkPlayers);
         // Se a troca de dados dos jogadores nao comecou sozinha, o mestre a pede.
         if (tWait > 120 && !tSentReq && IsLinkMaster() == TRUE && gReceivedRemoteLinkPlayers != TRUE)
         {
