@@ -18,6 +18,7 @@
 #include "overworld.h"
 #include "new_menu_helpers.h"
 #include "link.h"
+#include "coop.h"
 #include "graphics.h"
 #include "strings.h"
 #include "help_system.h"
@@ -137,6 +138,7 @@ static void VBlankCB_LinkError(void);
 static void CB2_LinkTest(void);
 static void ProcessRecvCmds(u8 id);
 static void LinkCB_SendHeldKeys(void);
+static void LinkCB_SendCoopPos(void);
 static void ResetBlockSend(void);
 static bool32 InitBlockSend(const void *src, size_t size);
 static void LinkCB_BlockSendBegin(void);
@@ -649,6 +651,9 @@ static void ProcessRecvCmds(u8 unused)
         case LINKCMD_SEND_HELD_KEYS:
             gLinkPartnersHeldKeys[i] = gRecvCmds[i][1];
             break;
+        case LINKCMD_COOP_POS:
+            Coop_OnPosCmd(i, &gRecvCmds[i][1]);
+            break;
         }
     }
 }
@@ -715,6 +720,10 @@ void BuildSendCmd(u16 command)
         gSendCmd[0] = LINKCMD_SEND_HELD_KEYS;
         gSendCmd[1] = gHeldKeyCodeToSend;
         break;
+    case LINKCMD_COOP_POS:
+        gSendCmd[0] = LINKCMD_COOP_POS;
+        Coop_BuildPosCmd(&gSendCmd[1]);
+        break;
     }
 }
 
@@ -741,6 +750,17 @@ static void LinkCB_SendHeldKeys(void)
 {
     if (gReceivedRemoteLinkPlayers == TRUE)
         BuildSendCmd(LINKCMD_SEND_HELD_KEYS);
+}
+
+void StartSendingCoopPos(void)
+{
+    gLinkCallback = LinkCB_SendCoopPos;
+}
+
+static void LinkCB_SendCoopPos(void)
+{
+    if (gReceivedRemoteLinkPlayers == TRUE)
+        BuildSendCmd(LINKCMD_COOP_POS);
 }
 
 void ClearLinkCallback(void)

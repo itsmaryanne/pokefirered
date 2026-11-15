@@ -31,6 +31,7 @@
 #include "new_game.h"
 #include "new_menu_helpers.h"
 #include "overworld.h"
+#include "coop.h"
 #include "play_time.h"
 #include "quest_log.h"
 #include "quest_log_objects.h"
@@ -1461,6 +1462,7 @@ static void OverworldBasic(void)
 {
     ScriptContext_RunScript();
     RunTasks();
+    Coop_OverworldTick();
     AnimateSprites();
     CameraUpdate();
     SetQuestLogEvent_Arrived();
