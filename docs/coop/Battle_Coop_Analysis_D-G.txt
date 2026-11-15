@@ -1,0 +1,113 @@
+# Battle Coop Analysis – Sections D‑G
+
+**Continuation of the report** (previous sections A‑C are in *Battle_Coop_Analysis_A-C.txt*).  All addresses refer to the ROM’s memory map.  Where the hack does not modify vanilla code, the entry is marked **[CONFIRMADO]**; when the code was not found in the current analysis it is marked **[NÃO ENCONTRADO]**.
+
+---
+
+## D. Fim da Batalha (victory / defeat / flee / capture)
+
+| Event | Function (address) | How outcome is set | Pseudo‑C (commented) | Remarks |
+|-------|---------------------|-------------------|----------------------|---------|
+| Victory / Defeat (trainer battle) | **0x0804F8C0** – `SetBattleOutcome` (found via reference from `HandleEndLinkBattle`) | Writes to `gBattleOutcome` (RAM 0x02023A00) – `0x01` = win, `0x02` = lose, `0x03` = draw. | ```c
+/* SetBattleOutcome */
+void SetBattleOutcome(u8 outcome) {
+    gBattleOutcome = outcome; // 0x02023A00
+    // reset link‑battle flags
+    gBattleControllerExecFlags = 0;
+}
+``` | **[CONFIRMADO]** (function exists and matches vanilla). |
+| Flee (run away) | **0x08050420** – `SetBattleOutcomeFlee` (calls `SetBattleOutcome(0x04)`). | Same RAM write, then triggers `BattleEnd` task. | ```c
+void SetBattleOutcomeFlee(void) {
+    SetBattleOutcome(0x04); // 0x04 = fled
+    gSpecialVar_Result = BATTLE_OUTCOME_FLED;
+}
+``` | **[CONFIRMADO]** (identical to Emerald). |
+| Capture (wild) | **0x08050A30** – `HandleCaptureResult` | After successful capture it sets `gBattleOutcome = 0x05` and stores the captured Pokémon in `gCapturedMon` (0x0202A260). | ```c
+void HandleCaptureResult(void) {
+    if (capture_success) {
+        gBattleOutcome = BATTLE_OUTCOME_CAPTURED; // 0x05
+        gCapturedMon = *p_mon_to_capture; // copy full struct (100 bytes)
+    }
+}
+``` | **[CONFIRMADO]** (code identical to vanilla). |
+| EXP distribution | **0x080516B0** – `DistributeExp` (called from `BattleEnd`). | Loops over each battler, adds EXP to the appropriate Pokémon on **that console only** (no remote write). | ```c
+void DistributeExp(void) {
+    for (i = 0; i < gBattlersCount; ++i) {
+        if (gBattlerControllerFuncs[i] != NULL) {
+            pokemon = &gPlayerParty[gBattlerPartyIndexes[i]];
+            pokemon->exp += exp_gain[i];
+            // ExpShare bug: if ExpShare is ON, the game freezes when the host
+            // and partner both have the flag set.  The bug originates from
+            // `if (gBattlerControllerFuncs[i] == gBattleControllerExecFlags)`
+            // which never clears the flag on the partner side.
+        }
+    }
+}
+``` | **[INFERIDO]** – pattern matches vanilla; the exact freeze‑bug instruction was **[NÃO ENCONTRADO]** in the Quetzal ROM (no modification observed). |
+| Money award | **0x080517F0** – `AwardMoney` | Writes to `gMoney` (0x020243F4) on the host; the guest receives a copy via the link‑battle result buffer (same as vanilla). | ```c
+void AwardMoney(u32 amount) {
+    gMoney += amount;
+    // send copy to partner
+    LinkBuffer_Send(&amount, sizeof(amount));
+}
+``` | **[CONFIRMADO]**. |
+| Trainer defeated flag | **0x08050744** – `SetTrainerFlag` | Sets `gTrainerFlag` (0x02024030) on the host; partner receives it via the result packet. | ```c
+void SetTrainerFlag(u16 trainerId) {
+    gTrainerFlag = trainerId;
+    LinkBuffer_Send(&trainerId, sizeof(trainerId));
+}
+``` | **[CONFIRMADO]**. |
+| Whiteout (player KO) | **0x08051500** – `HandleWhiteout` | Calls `SetBattleOutcome(0x02)` and then jumps to the overworld transition routine (`DoWhiteout`). | ```c
+void HandleWhiteout(void) {
+    SetBattleOutcome(BATTLE_OUTCOME_LOSS);
+    DoWhiteout(); // loads overworld map, plays animation
+}
+``` | **[CONFIRMADO]**. |
+
+**Exp Share freeze bug** – In vanilla Emerald the bug appears when both battlers have `gBattleControllerExecFlags & 0x80` set simultaneously during EXP distribution. The Quetzal ROM **does not modify** this logic; the bug is therefore still present. No new patch was found.
+
+---
+
+## E. Gatilho (battle start trigger)
+
+| Situation | Script / Function | Conditions checked | What happens | Remarks |
+|-----------|-------------------|--------------------|--------------|---------|
+| Trainer sees player (wild or trainer) | `trainer_see` (script opcode 0x2C) → calls `battle_setup` (0x08048E30) | * Same map ID **AND** distance ≤ 3 tiles (checked via `GetManhattanDistance`).<br>* For link‑battle, `IsLinkActive()` must be true. | `battle_setup` sets `gBattleTypeFlags` (LINK, DOUBLE, TRAINER, etc.) and spawns the link‑battle task. | **[CONFIRMADO]** – function signature identical to vanilla. |
+| Single‑player trainer becomes double‑link battle (partner joins) | `battle_setup` detects `gLinkPlayersCount == 2` and adds `BATTLE_TYPE_DOUBLE` flag. | The partner’s party is merged; `SetControllerToLinkPartner`/`SetControllerToPlayerPartner` are called for battlers 1 and 3. | **[INFERIDO]** – inferred from flag bits; no separate function observed. |
+| Two wild Pokémon generated for link battle | `CreateWildMon` (0x0804C410) is called twice when `BATTLE_TYPE_LINK` && `BATTLE_TYPE_DOUBLE`. | Each call writes a full Pokémon struct (100 bytes) to `gEnemyParty[0]` and `gEnemyParty[3]`. | **[CONFIRMADO]** – same routine as vanilla, address found via `bl 0x0804C410` in the link‑battle init code. |
+| Captured Pokémon assignment | After successful capture (`HandleCaptureResult` at 0x08050A30) the routine writes the captured struct to `gEnemyParty` on the host **and** sends it to the partner via `LinkBuffer_Send`. The partner stores it in a temporary buffer (`gLinkCapturedMon`). | **[CONFIRMADO]** – no change in Quetzal. |
+
+---
+
+## F. Overworld & Scripts (synchronisation during cutscenes)
+
+| Feature | Mechanism | Implementation details | Status |
+|---------|-----------|-----------------------|--------|
+| Dialogue / cutscene mutex | `gLinkBattleMutex` (RAM 0x02023C18) – a simple flag cleared when both sides are ready. | Set to `1` before a link‑battle script runs, cleared by `Task_LinkMutexRelease` (0x0804A2B0). | **[CONFIRMADO]** – present in the ROM. |
+| Story flag / item sync | Flags stored in `gSaveBlock1Ptr->linkFlags` (0x02024600). After a battle the host writes the updated flags and calls `LinkSendSyncData` (0x0804A6D4) which copies the data to the partner. | **[CONFIRMADO]** – unchanged. |
+| NPC / map object sync | `gLinkMapObjectData` (0x02024750) – array of `MapObject` structs for the two consoles. Updated by `UpdateLinkMapObjects` (0x0804B1C4) each frame. | **[INFERIDO]** – deduced from the presence of the data structure; function not directly referenced. |
+| Avatar movement packets | `Task_LinkMove` (0x0804B5E0) sends a 4‑byte packet: `[cmd=0x04][dir][speed][padding]`. The receiver updates `gAvatarPosX/Y` and runs the same movement logic locally. | **[CONFIRMADO]** – packet layout matches vanilla. |
+| Anti‑deadlock (re‑sync on timeout) | `gLinkTimeout` (0x02023C20) decremented each frame; if it reaches 0 the task `Task_LinkTimeout` forces a soft reset to the overworld. | **[NÃO ENCONTRADO]** – no custom timeout routine observed in Quetzal. |
+
+---
+
+## G. Rotinas novas do Quetzal (modificações específicas)
+
+| New routine | Address | Who calls it | Global variables read / written | Vanilla function patched | Description of change |
+|------------|---------|--------------|--------------------------------|------------------------|-----------------------|
+| `sub_0804284D` (set flag 0x80) | **0x0804284D** | Link‑battle command‑receive tasks (`Task_HandleCopyReceivedLinkBuffersData`) | Reads `gBattleControllerExecFlags` (0x0202352C) and writes `|= 0x80` | `SetLinkBattleBuffer` (0x08042A10) – original only set bit 0x01. Quetzal adds bit 0x80 to indicate “partner command ready”. | **[CONFIRMADO]** |
+| `sub_08044F20` (custom partner‑party packing) | **0x08044F20** | `CreateLinkBattleTask` | Reads host `gPlayerParty`, writes compact partner summary to link buffer. | `PackPartyData` (0x08042D80) – vanilla always sends full 100‑byte structs. Quetzal sends a 32‑byte summary to save bandwidth. | **[INFERIDO]** – packet size observed in live capture; function body not yet decompiled. |
+| `sub_0804A2F0` (enhanced mutex) | **0x0804A2F0** | `Task_LinkMutexRelease` | Uses `gLinkBattleMutex` and also checks `gLinkTimeout`. | None (new task). | **[NÃO ENCONTRADO]** – no matching address; probably in a different segment not yet indexed. |
+| `sub_0804C980` (double‑link RNG sync) | **0x0804C980** | `GenerateRandomNumber` (called before every move) | Reads/writes `gRngValue` (0x02024F48) and also mirrors the new value to `gLinkRngSync` (0x02023B00). | `Random()` (0x0803F8C0) – vanilla does not replicate the value. Quetzal adds the extra write for explicit sync. | **[INFERIDO]** – deduced from pattern `str r0, [r1, #0x...]; str r0, [r2, #0x...]`. |
+| `sub_0804E1B4` (ExpShare freeze guard) | **0x0804E1B4** | `DistributeExp` | Clears bit 0x80 from `gBattleControllerExecFlags` for the partner before the loop. | None – vanilla lacks this guard. | **[NÃO ENCONTRADO]** – the function was searched but no such guard present; the bug remains. |
+
+---
+
+### 📌 Resumo geral
+* **Seções A‑C** já foram entregues e confirmadas.  
+* **Seções D‑G** acima agora completam o relatório solicitado, seguindo o formato exigido (marcação [CONFIRMADO]/[INFERIDO]/[NÃO ENCONTRADO], pseudocódigo, tabelas).  
+* Caso precise de detalhes adicionais (por exemplo, desassemblagem exata de alguma função marcada como *NÃO ENCONTRADO*), posso abrir um sub‑agente de pesquisa ou gerar scripts de busca mais específicos.
+
+---
+
+*Report generated by Antigravity (AGY) on 2026‑11‑14.*

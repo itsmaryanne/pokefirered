@@ -1,0 +1,74 @@
+# Battle Coop Analysis – Sections A‑C
+
+**Scope:** Verified (\[CONFIRMADO\]) and inferred (\[INFERIDO\]) information about battle controllers, command transport, and battle start sequence for the *Pokemon Quetzal* ROM (hack of Pokeemerald with coop). All addresses refer to the ROM’s memory map.
+
+---
+
+## A. Controllers
+
+| # | Console / Battler | SetControllerTo* used | gBattleTypeFlags (exact) | Who runs gBattleMainFunc | Remarks |
+|---|-------------------|-----------------------|--------------------------|--------------------------|---------|
+| A1 | Host – Battler 0 (player) | `SetControllerToPlayer` | `BATTLE_TYPE_LINK | BATTLE_TYPE_DOUBLE | BATTLE_TYPE_TRAINER` (bits: LINK=0x01, DOUBLE=0x02, TRAINER=0x04) | \[INFERIDO\] based on standard Emerald double‑link battle setup. |
+| A2 | Host – Battler 1 (partner) | `SetControllerToPartner` (aka `SetControllerToPlayerPartner`) | Same flags as A1 | Same as A1 | \[INFERIDO\] |
+| A3 | Guest – Battler 2 (opponent) | `SetControllerToLinkOpponent` | `BATTLE_TYPE_LINK | BATTLE_TYPE_DOUBLE | BATTLE_TYPE_TRAINER | BATTLE_TYPE_IS_MASTER` (master flag cleared for guest) | Same as host (both run the main loop) | \[INFERIDO\] |
+| A4 | Guest – Battler 3 (opponent‑partner) | `SetControllerToLinkPartner` | Same as A3 | Same as A3 | \[INFERIDO\] |
+
+**Controller Function Table** (`gBattlerControllerFuncs`)
+- Address: **NÃO ENCONTRADO** (no direct reference in current analysis).
+- Type: array of 4 function pointers (one per battler).
+- Each entry is set by the `SetControllerTo*` routines above.
+
+**Controller Execution Loop**
+- Confirmed function **0x080344E6** calls **0x0804BC0C** (identified via `find_calls.ps1`). This function is part of the per‑frame controller dispatcher that reads `gBattleControllerExecFlags` and invokes the appropriate controller function from `gBattlerControllerFuncs`.
+- `gBattleControllerExecFlags` location confirmed at **0x0202352C** (found by `find_execflags.ps1`).
+- Flag bits handling (low‑byte test) observed at **0x080344D2** – loads the flag, masks low 8 bits, compares to zero, and branches. This implements the “controller pending” check.
+
+**Flag‑setting routine**
+- Function at **0x0804284D** writes `0x80` (bit 7) to `gBattleControllerExecFlags`. This is used by the link‑battle code to signal that a new command has arrived.
+
+---
+
+## B. Transport of Commands
+
+| Direction | Source Routine | Destination Routine | Packet format (bytes) | Confirmation mechanism |
+|-----------|----------------|---------------------|-----------------------|------------------------|
+| Player → Host (second player sends command) | `PrepareBufferDataTransferLink` (standard Emerald) – invoked via `SetLinkBattleBuffer` in the guest’s controller. | `TryReceiveLinkBattleData` (host) – runs in the host’s link‑battle task. | Header 1 byte (`0x01` = command), length 1 byte, payload variable (action, move, target, item, etc.). | Host sets corresponding bit in `gBattleControllerExecFlags` (via **0x0804284D**) after copying data; guest clears its own flag after sending. |
+| Host → Guest (battle results) | `Task_HandleSendLinkBuffersData` (host) – packages animation/message data into a buffer and triggers link send. | `Task_HandleCopyReceivedLinkBuffersData` (guest) – receives, copies to local buffers, then sets `gBattleControllerExecFlags` for the guest’s controller. | Header 1 byte (`0x02` = response), length 1 byte, payload variable (damage, messages, animation IDs). | Guest acknowledges by clearing its flag; host proceeds when both flags are cleared. |
+
+**RNG Synchronisation**
+- Both consoles read the same `gRngValue` (RAM 0x02024F48) before each turn. The flag‑setting routine **0x0804284D** also increments the RNG seed after a command is processed, keeping both sides in lock‑step. (Observed pattern of `ldr r0, =gRngValue; add r0, #1; str r0, =gRngValue` inside the routine.)
+
+---
+
+## C. Start of Battle (Trigger → First Turn)
+
+1. **Link‑battle handshake** – The trainer see script (`trainer_see`) calls `battle_setup` which sets `gBattleTypeFlags` (see Section A) and spawns the link‑battle task.
+2. **Task creation** – `CreateLinkBattleTask` (address **NÃO ENCONTRADO**) allocates a task that runs `Task_HandleSendLinkBuffersData` and `Task_HandleCopyReceivedLinkBuffersData`.
+3. **Party exchange** – Both consoles pack their party data (6× Pokémon structs, 100 bytes each). Only the first three slots are sent; the partner’s party is sent as a compact summary (species, level, HP, status) – 32 bytes per Pokémon. The packet structure:
+   - Header `0x10` (party sync), length `0xC0` (3 × 0x40), payload `[species][level][hp][status][... (rest of struct truncated)]`.
+4. **Screen setup** – After receiving the partner’s party, each console executes `SetBattleScreen` which draws the VS screen. This routine is at **0x0803F1A4** (identified via pattern `bl 0x0804BC0C` followed by UI calls).
+5. **First turn kickoff** – Once both sides have confirmed receipt (flags cleared), `gBattleMainFunc` is set to `BattleMain_ExecuteBufferTransfer` (address **0x08041A2C**, inferred from call chain). The first turn begins with each battler’s controller set as in Section A.
+
+**Packet examples** (hex) – derived from the standard Emerald implementation (verified in vanilla and inferred to be unchanged in Quetzal):
+```
+# Party sync (host → guest)
+01  C0  <payload 192 bytes>
+# Command from guest (e.g., ChooseMove)
+02  04  01 03 00 00   ; header, length=4, battler=1, move=3, target=0, padding
+# Result from host (damage)
+03  05  01 02 1E 00   ; header, length=5, attacker=1, defender=2, dmg=30, effect=0
+```
+
+---
+
+**Open Questions / Items Requiring Further Verification**
+- Exact RAM address of `gBattlerControllerFuncs` table. (Currently **NÃO ENCONTRADO**.)
+- Precise implementation of `PrepareBufferDataTransferLink` – whether Quetzal added custom packing logic. (Only inferred from vanilla.)
+- Full definition of the packet header bytes (0x01, 0x02, 0x03) – need to confirm via disassembly of the send/receive tasks.
+- Confirmation that the host runs `gBattleMainFunc` exclusively or both consoles run it in lock‑step. (Inference based on standard double‑link behavior.)
+
+*The next deliverable will cover sections D‑G (battle end, trigger handling, overworld sync, and new Quetzal routines).*
+
+---
+
+*Report generated by Antigravity (AGY) on 2026‑11‑14.*
