@@ -1460,6 +1460,7 @@ void CB1_Overworld(void)
 
 static void OverworldBasic(void)
 {
+    Coop_SnapshotLocal();
     ScriptContext_RunScript();
     RunTasks();
     Coop_OverworldTick();

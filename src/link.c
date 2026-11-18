@@ -26,6 +26,7 @@
 #include "constants/battle.h"
 #include "constants/songs.h"
 #include "sloopsvc.h"
+#include "strings.h"
 
 extern u16 gHeldKeyCodeToSend;
 
@@ -49,14 +50,16 @@ struct LinkTestBGInfo
 #define SIO_MULTI_CNT ((struct SioMultiCnt *)REG_ADDR_SIOCNT)
 
 static struct BlockTransfer sBlockSend;
-ALIGNED(8) static struct BlockTransfer sBlockRecv[MAX_LINK_PLAYERS];
+ALIGNED(8)
+static struct BlockTransfer sBlockRecv[MAX_LINK_PLAYERS];
 static u32 sBlockSendDelayCounter;
 static u32 sDummy1; // Never read
-static u8 sDummy2; // Never assigned, read in unused function
+static u8 sDummy2;  // Never assigned, read in unused function
 static u32 sPlayerDataExchangeStatus;
 static u32 sDummy3; // Never read
 static u8 sLinkTestLastBlockSendPos;
-ALIGNED(8) static u8 sLinkTestLastBlockRecvPos[MAX_LINK_PLAYERS];
+ALIGNED(8)
+static u8 sLinkTestLastBlockRecvPos[MAX_LINK_PLAYERS];
 static u8 sNumVBlanksWithoutSerialIntr;
 static bool8 sSendBufferEmpty;
 static u16 sSendNonzeroCheck;
@@ -121,7 +124,8 @@ static EWRAM_DATA u16 sTimeOutCounter = 0;
 EWRAM_DATA struct LinkPlayer gLocalLinkPlayer = {};
 EWRAM_DATA struct LinkPlayer gLinkPlayers[MAX_RFU_PLAYERS] = {};
 EWRAM_DATA struct LinkPlayer gSavedLinkPlayers[MAX_RFU_PLAYERS] = {};
-EWRAM_DATA struct {
+EWRAM_DATA struct
+{
     u32 status;
     u8 lastRecvQueueCount;
     u8 lastSendQueueCount;
@@ -185,12 +189,11 @@ static const u16 sLinkTestFontGfx[] = INCBIN_U16("graphics/link/test_font.4bpp")
 #endif
 
 static const struct BlockRequest sBlockRequests[] = {
-    [BLOCK_REQ_SIZE_NONE] = { gBlockSendBuffer, 200 },
-    [BLOCK_REQ_SIZE_200]  = { gBlockSendBuffer, 200 },
-    [BLOCK_REQ_SIZE_100]  = { gBlockSendBuffer, 100 },
-    [BLOCK_REQ_SIZE_220]  = { gBlockSendBuffer, 220 },
-    [BLOCK_REQ_SIZE_40]   = { gBlockSendBuffer,  40 }
-};
+    [BLOCK_REQ_SIZE_NONE] = {gBlockSendBuffer, 200},
+    [BLOCK_REQ_SIZE_200] = {gBlockSendBuffer, 200},
+    [BLOCK_REQ_SIZE_100] = {gBlockSendBuffer, 100},
+    [BLOCK_REQ_SIZE_220] = {gBlockSendBuffer, 220},
+    [BLOCK_REQ_SIZE_40] = {gBlockSendBuffer, 40}};
 static const char sASCIIGameFreakInc[] = "GameFreak inc.";
 
 #if REVISION >= 0xA
@@ -199,48 +202,40 @@ static const char sASCIITestPrint[] = "TEST PRINT\nP0\nP1\nP2\nP3";
 #endif
 
 static const struct BgTemplate sLinkErrorBgTemplates[] = {
-    {
-        .bg = 0,
-        .charBaseIndex = 2,
-        .mapBaseIndex = 31,
-        .priority = 0
-    }, {
-        .bg = 1,
-        .charBaseIndex = 0,
-        .mapBaseIndex = 8,
-        .priority = 1
-    }
-};
+    {.bg = 0,
+     .charBaseIndex = 2,
+     .mapBaseIndex = 31,
+     .priority = 0},
+    {.bg = 1,
+     .charBaseIndex = 0,
+     .mapBaseIndex = 8,
+     .priority = 1}};
 
 static const struct WindowTemplate sLinkErrorWindowTemplates[] = {
-    {
-        .bg = 0,
-        .tilemapLeft = 0,
-        .tilemapTop = 0,
-        .width = 30,
-        .height = 5,
-        .paletteNum = 15,
-        .baseBlock = 0x002
-    }, {
-        .bg = 0,
-        .tilemapLeft = 0,
-        .tilemapTop = 6,
-        .width = 30,
-        .height = 7,
-        .paletteNum = 15,
-        .baseBlock = 0x098
-    }, {
-        .bg = 0,
-        .tilemapLeft = 0,
-        .tilemapTop = 13,
-        .width = 30,
-        .height = 7,
-        .paletteNum = 15,
-        .baseBlock = 0x16A
-    }, DUMMY_WIN_TEMPLATE
-};
+    {.bg = 0,
+     .tilemapLeft = 0,
+     .tilemapTop = 0,
+     .width = 30,
+     .height = 5,
+     .paletteNum = 15,
+     .baseBlock = 0x002},
+    {.bg = 0,
+     .tilemapLeft = 0,
+     .tilemapTop = 6,
+     .width = 30,
+     .height = 7,
+     .paletteNum = 15,
+     .baseBlock = 0x098},
+    {.bg = 0,
+     .tilemapLeft = 0,
+     .tilemapTop = 13,
+     .width = 30,
+     .height = 7,
+     .paletteNum = 15,
+     .baseBlock = 0x16A},
+    DUMMY_WIN_TEMPLATE};
 
-static const u8 sLinkErrorTextColor[] = { 0x00, 0x01, 0x02 };
+static const u8 sLinkErrorTextColor[] = {0x00, 0x01, 0x02};
 
 bool8 IsWirelessAdapterConnected(void)
 {
@@ -556,7 +551,7 @@ static void ProcessRecvCmds(u8 unused)
         {
         case LINKCMD_SEND_LINK_TYPE:
         {
-            struct LinkPlayerBlock * block;
+            struct LinkPlayerBlock *block;
 
             InitLocalLinkPlayer();
             block = &gLocalLinkPlayerBlock;
@@ -577,7 +572,7 @@ static void ProcessRecvCmds(u8 unused)
             break;
         case LINKCMD_INIT_BLOCK:
         {
-            struct BlockTransfer * blockRecv;
+            struct BlockTransfer *blockRecv;
 
             blockRecv = &sBlockRecv[i];
             blockRecv->pos = 0;
@@ -610,8 +605,8 @@ static void ProcessRecvCmds(u8 unused)
             {
                 if (gRemoteLinkPlayersNotReceived[i] == TRUE)
                 {
-                    struct LinkPlayerBlock * block;
-                    struct LinkPlayer * linkPlayer;
+                    struct LinkPlayerBlock *block;
+                    struct LinkPlayer *linkPlayer;
 
                     block = (struct LinkPlayerBlock *)&gBlockRecvBuffer[i];
                     linkPlayer = &gLinkPlayers[i];
@@ -623,8 +618,7 @@ static void ProcessRecvCmds(u8 unused)
                         linkPlayer->progressFlags = 0;
                     }
                     ConvertLinkPlayerName(linkPlayer);
-                    if (strcmp(block->magic1, sASCIIGameFreakInc) != 0
-                     || strcmp(block->magic2, sASCIIGameFreakInc) != 0)
+                    if (strcmp(block->magic1, sASCIIGameFreakInc) != 0 || strcmp(block->magic2, sASCIIGameFreakInc) != 0)
                         SetMainCallback2(CB2_LinkError);
                     else
                         HandleReceiveRemoteLinkPlayer(i);
@@ -635,7 +629,7 @@ static void ProcessRecvCmds(u8 unused)
                 }
             }
         }
-            break;
+        break;
         case LINKCMD_READY_CLOSE_LINK:
             gReadyToCloseLink[i] = TRUE;
             break;
@@ -721,8 +715,10 @@ void BuildSendCmd(u16 command)
         gSendCmd[1] = gHeldKeyCodeToSend;
         break;
     case LINKCMD_COOP_POS:
-        gSendCmd[0] = LINKCMD_COOP_POS;
-        Coop_BuildPosCmd(&gSendCmd[1]);
+        if (gLinkTransferringData)
+            break;
+        if (Coop_BuildPosCmd(&gSendCmd[1]))
+            gSendCmd[0] = LINKCMD_COOP_POS;
         break;
     }
 }
@@ -1263,8 +1259,7 @@ void CheckLinkPlayersMatchSaved(void)
 
     for (i = 0; i < gSavedLinkPlayerCount; i++)
     {
-        if (gSavedLinkPlayers[i].trainerId != gLinkPlayers[i].trainerId 
-         || StringCompare(gSavedLinkPlayers[i].name, gLinkPlayers[i].name) != 0)
+        if (gSavedLinkPlayers[i].trainerId != gLinkPlayers[i].trainerId || StringCompare(gSavedLinkPlayers[i].name, gLinkPlayers[i].name) != 0)
         {
             gLinkErrorOccurred = TRUE;
             CloseLink();
@@ -1419,6 +1414,7 @@ static void CheckErrorStatus(void)
     // Check if a link error has occurred
     if (sLinkOpen && EXTRACT_LINK_ERRORS(gLinkStatus))
     {
+        Coop_OnLinkError(gLinkStatus, gLastRecvQueueCount, gLastSendQueueCount);
         // Link error has occurred, handle message details if
         // necessary, then stop the link.
         if (!gSuppressLinkErrorMessage)
@@ -1626,7 +1622,7 @@ bool8 HasLinkErrorOccurred(void)
 
 void LocalLinkPlayerToBlock(void)
 {
-    struct LinkPlayerBlock * block;
+    struct LinkPlayerBlock *block;
 
     InitLocalLinkPlayer();
     block = &gLocalLinkPlayerBlock;
@@ -1639,16 +1635,15 @@ void LocalLinkPlayerToBlock(void)
 void LinkPlayerFromBlock(u32 who)
 {
     u8 who_ = who;
-    struct LinkPlayerBlock * block;
-    struct LinkPlayer * player;
+    struct LinkPlayerBlock *block;
+    struct LinkPlayer *player;
 
     block = (struct LinkPlayerBlock *)gBlockRecvBuffer[who_];
     player = &gLinkPlayers[who_];
     *player = block->linkPlayer;
     ConvertLinkPlayerName(player);
 
-    if (strcmp(block->magic1, sASCIIGameFreakInc) != 0
-     || strcmp(block->magic2, sASCIIGameFreakInc) != 0)
+    if (strcmp(block->magic1, sASCIIGameFreakInc) != 0 || strcmp(block->magic2, sASCIIGameFreakInc) != 0)
     {
         SetMainCallback2(CB2_LinkError);
     }
@@ -1673,11 +1668,11 @@ bool8 HandleLinkConnection(void)
         bool32 reloadOrReset = FALSE;
         if (svc_51())
         {
-// Documentation issue:
-// Rfu_IsMaster supposedly returns bool8, but just returns gRfu.ParentChild
-// That value has three states, see librfu.h. One of those states is MODE_NEUTRAL (0xFF) which means init.
-// So the last condition basically means "rfu link status is connected, not initialising".
-// As in, it's true if value is MODE_CHILD or MODE_PARENT but not MODE_NEUTRAL (because unsigned cmp).
+            // Documentation issue:
+            // Rfu_IsMaster supposedly returns bool8, but just returns gRfu.ParentChild
+            // That value has three states, see librfu.h. One of those states is MODE_NEUTRAL (0xFF) which means init.
+            // So the last condition basically means "rfu link status is connected, not initialising".
+            // As in, it's true if value is MODE_CHILD or MODE_PARENT but not MODE_NEUTRAL (because unsigned cmp).
             if (!FuncIsActiveTask(Task_WirelessCommunicationScreen) && (InUnionRoom() || gReceivedRemoteLinkPlayers != 0 || Rfu_IsMaster() <= MODE_PARENT))
             {
                 reloadOrReset = TRUE;
@@ -1691,12 +1686,14 @@ bool8 HandleLinkConnection(void)
         if (reloadOrReset)
         {
             // If active task is mystery gift then soft reset, otherwise reload the save.
-            if (FuncIsActiveTask(Task_MysteryGift)) RfuSoftReset();
-            else RfuReloadSave();
+            if (FuncIsActiveTask(Task_MysteryGift))
+                RfuSoftReset();
+            else
+                RfuReloadSave();
         }
         else
 #endif
-        if (IsSendingKeysOverCable() == TRUE)
+            if (IsSendingKeysOverCable() == TRUE)
         {
             // This will never be reached.
             // IsSendingKeysOverCable is always FALSE for wireless communication
@@ -1742,7 +1739,7 @@ bool32 IsLinkRecvQueueAtOverworldMax(void)
     return FALSE;
 }
 
-void ConvertLinkPlayerName(struct LinkPlayer * player)
+void ConvertLinkPlayerName(struct LinkPlayer *player)
 {
     player->progressFlagsCopy = player->progressFlags; // ? Perhaps relocating for a longer name field
     ConvertInternationalString(player->name, player->language);

@@ -16,6 +16,7 @@
 #include "save_failed_screen.h"
 #include "quest_log.h"
 #include "sloopsvc.h"
+#include "coop.h"
 
 extern u32 intr_main[];
 
@@ -221,6 +222,7 @@ static void UpdateLinkAndCallCallbacks(void)
 {
     if (!HandleLinkConnection())
         CallCallbacks();
+    Coop_LinkCatchUp();
 }
 
 static void InitMainCallbacks(void)

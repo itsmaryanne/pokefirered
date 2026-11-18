@@ -20,6 +20,7 @@
 #include "constants/event_objects.h"
 #include "constants/trainer_types.h"
 #include "constants/union_room.h"
+#include "coop.h"
 
 static void MoveCoordsInDirection(u32, s16 *, s16 *, s16, s16);
 static bool8 ObjectEventExecSingleMovementAction(struct ObjectEvent *, struct Sprite *);
@@ -4904,6 +4905,8 @@ static bool8 DoesObjectCollideWithObjectAt(struct ObjectEvent *objectEvent, s16 
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
     {
         curObject = &gObjectEvents[i];
+        if (Coop_ObjectsPassThrough(objectEvent, curObject))
+        continue;
         if (curObject->active && curObject != objectEvent)
         {
             if ((curObject->currentCoords.x == x && curObject->currentCoords.y == y) || (curObject->previousCoords.x == x && curObject->previousCoords.y == y))
